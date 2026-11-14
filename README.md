@@ -166,4 +166,4 @@ Contributions are welcome. If SnapCull can't read a preview from your camera's f
 
 ## License
 
-[MIT](LICENSE)
+SnapCull is open source under the [MIT License](LICENSE), © 2026 Neel Gupta. You can use it, change it and share it, including in your own projects, as long as you keep the copyright notice.

@@ -12,6 +12,8 @@
     <Version>0.1.0</Version>
     <Product>SnapCull</Product>
     <Description>Fast photo culling for Windows</Description>
+    <Authors>Neel Gupta</Authors>
+    <Copyright>Copyright (c) 2026 Neel Gupta. MIT License.</Copyright>
     <!-- WPF's Fluent theme (ThemeMode) is still marked experimental. -->
     <NoWarn>$(NoWarn);WPF0001</NoWarn>
   </PropertyGroup>
