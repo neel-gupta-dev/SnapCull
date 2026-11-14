@@ -2,6 +2,7 @@ bin/
 obj/
 publish/
 packaging/out/
+packaging/screenshots/
 TestResults/
 .vs/
 .vscode/

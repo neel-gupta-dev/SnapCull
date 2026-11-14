@@ -4,6 +4,10 @@
 
 **Fast, free photo culling for Windows.** Open a folder straight off your memory card, flip through hundreds of RAW files instantly, and pick the keepers with one key per photo. SnapCull flags blurry shots for you, puts similar frames side by side, and saves your ratings as `.xmp` sidecars that Lightroom, Capture One, Bridge and darktable pick up automatically.
 
+![SnapCull showing a Nikon Z f RAW file with camera info, focus score, histogram and the filmstrip](docs/screenshot-viewer.jpg)
+
+![Compare mode: two photos side by side at 100% zoom](docs/screenshot-compare.jpg)
+
 ## Why it's fast
 
 Every RAW file has a full-size JPEG preview hidden inside it, put there by the camera. SnapCull reads that preview directly instead of processing the raw sensor data, so photos appear as quickly as you can press the arrow keys. Photo Mechanic works the same way. It also:
