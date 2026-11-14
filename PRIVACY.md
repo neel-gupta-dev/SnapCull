@@ -10,7 +10,7 @@ SnapCull is a photo culling app for Windows made by Neel Gupta. This policy expl
 
 ## What SnapCull does with your files
 
-- **Your photos** are only read from folders you choose to open. They are never uploaded or copied anywhere, except to a folder you pick yourself with *Copy / move picks*.
+- **Your photos** are only read from folders you choose to open. They are never uploaded or copied anywhere, except to a folder you pick yourself with *Copy / move picks* or *Convert*. When converting, you choose whether camera details and GPS location are kept in the new files.
 - **Your ratings** (picks, rejects, stars and colour labels) are saved in `.xmp` sidecar files next to your photos, in the same folders. Nothing is stored anywhere else.
 - **Your settings** (for example the last folder you opened, and whether the histogram is shown) are saved in a small file on your PC at `%AppData%\SnapCull\settings.json`. They never leave your computer.
 - **Photo details** such as camera model, lens, date and GPS location stay inside your photo files. SnapCull only displays them on your screen and never sends them anywhere.

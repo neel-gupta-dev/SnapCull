@@ -17,6 +17,15 @@ public sealed class ExifData
     public double? FocalLength { get; set; }
     /// <summary>EXIF orientation, 1–8. 1 means "no rotation needed".</summary>
     public int Orientation { get; set; } = 1;
+    /// <summary>Where the photo was taken, in decimal degrees (south and west are negative), if the camera recorded it.</summary>
+    public double? GpsLatitude { get; set; }
+    public double? GpsLongitude { get; set; }
+    /// <summary>Metres above sea level (negative below).</summary>
+    public double? GpsAltitude { get; set; }
+    public bool HasGps => GpsLatitude is not null && GpsLongitude is not null;
+
+    /// <summary>A copy, so callers can change fields (e.g. drop GPS) without touching the original.</summary>
+    public ExifData Clone() => (ExifData)MemberwiseClone();
 
     /// <summary>
     /// "Canon EOS R6", "SONY ILCE-7M4", "OLYMPUS E-M1MarkII" — drops company suffixes such as "CORPORATION"
@@ -82,6 +91,12 @@ public sealed class ExifData
         Iso ??= other.Iso;
         FocalLength ??= other.FocalLength;
         if (Orientation == 1) Orientation = other.Orientation;
+        if (!HasGps && other.HasGps)
+        {
+            GpsLatitude = other.GpsLatitude;
+            GpsLongitude = other.GpsLongitude;
+            GpsAltitude = other.GpsAltitude;
+        }
     }
 
     static string Invariant(FormattableString s) => s.ToString(CultureInfo.InvariantCulture);

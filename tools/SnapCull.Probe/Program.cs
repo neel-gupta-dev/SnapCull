@@ -19,6 +19,30 @@ if (args.Length == 0 || !Directory.Exists(args[0]))
 }
 bool focus = args.Contains("--focus");
 
+// --convert <jpeg|png|tiff|webp|heic> <out-folder> [--long-edge N] [--raw auto|preview|render]: convert every photo with the app's converter.
+if (args.Contains("--convert"))
+{
+    int at = Array.IndexOf(args, "--convert");
+    var format = Enum.Parse<ConvertFormat>(args[at + 1], ignoreCase: true);
+    var outDir = args[at + 2];
+    int longEdge = args.Contains("--long-edge") ? int.Parse(args[Array.IndexOf(args, "--long-edge") + 1]) : 0;
+    var rawSource = args.Contains("--raw") ? args[Array.IndexOf(args, "--raw") + 1] switch { "preview" => RawSource.Preview, "render" => RawSource.FullRender, _ => RawSource.Auto } : RawSource.Auto;
+    var options = new ConvertOptions
+    {
+        Format = format, Destination = outDir, RawSource = rawSource, Tiff16Bit = args.Contains("--16bit"),
+        Resize = longEdge > 0 ? ConvertResize.LongEdge : ConvertResize.Original, ResizeValue = longEdge,
+    };
+    var photos = Directory.EnumerateFiles(args[0]).Where(PhotoFormats.IsSupported).OrderBy(f => f)
+        .Select(f => (PhotoFiles.FromPath(f), (ExifData?)null)).ToList();
+    var timer = Stopwatch.StartNew();
+    var converted = PhotoConverter.Run(photos, options);
+    Console.WriteLine($"Converted {converted.Converted} of {photos.Count} to {format} in {timer.Elapsed.TotalSeconds:0.0} s; " +
+                      $"{converted.UsedPreviewInstead} used the preview instead of a RAW render.");
+    foreach (var error in converted.Errors) Console.WriteLine("  FAILED " + error);
+    Console.WriteLine($"HEIC encoder available: {PhotoConverter.CanWriteHeic}");
+    return converted.Errors.Count == 0 ? 0 : 1;
+}
+
 // --sheet <out.png>: render every photo the way the app shows it into one contact sheet, to eyeball rotation and colours.
 if (args.Contains("--sheet"))
 {

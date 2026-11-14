@@ -35,6 +35,10 @@ public partial class PhotoViewer : UserControl
     public event EventHandler<Point>? Panned;
     /// <summary>The mouse was pressed on this viewer (used to pick the active side in compare mode).</summary>
     public event EventHandler? Activated;
+    /// <summary>"Convert this photo…" was chosen from the right-click menu.</summary>
+    public event EventHandler? ConvertRequested;
+
+    void Convert_Click(object sender, RoutedEventArgs e) => ConvertRequested?.Invoke(this, EventArgs.Empty);
 
     public string PositionText { set => PositionLabel.Text = value; }
 

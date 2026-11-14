@@ -62,7 +62,8 @@ public static class ImageDecoder
         return found;
     }
 
-    static bool IsNearlyBlack(BitmapSource bitmap)
+    /// <summary>True for renders that came back (almost) completely black, which some RAW formats do through the Windows codec.</summary>
+    public static bool IsNearlyBlack(BitmapSource bitmap)
     {
         var (pixels, w, h, stride) = Pixels(bitmap, 64, PixelFormats.Gray8);
         long sum = 0;
@@ -72,7 +73,15 @@ public static class ImageDecoder
     }
 
     /// <summary>Renders a RAW file with whatever Windows codec is installed (the Raw Image Extension, for RAW formats).</summary>
-    static Loaded? DecodeWithWindowsCodec(string path, int? maxLongSide, ExifData? exif)
+    static Loaded? DecodeWithWindowsCodec(string path, int? maxLongSide, ExifData? exif) =>
+        RenderRaw(path, _ => maxLongSide, exif, keepHighBitDepth: false);
+
+    /// <summary>
+    /// Renders a RAW file's sensor data with Windows' codec. <paramref name="chooseLongSide"/> receives the full
+    /// long side and returns the long side to decode at (null = full size). With <paramref name="keepHighBitDepth"/>,
+    /// 16-bit-per-channel output is kept (for 16-bit TIFF export).
+    /// </summary>
+    public static Loaded? RenderRaw(string path, Func<int, int?> chooseLongSide, ExifData? exif, bool keepHighBitDepth)
     {
         try
         {
@@ -84,6 +93,7 @@ public static class ImageDecoder
                     BitmapCacheOption.None).Frames[0];
                 (width, height) = (frame.PixelWidth, frame.PixelHeight);
             }
+            int? maxLongSide = chooseLongSide(Math.Max(width, height));
 
             var image = new BitmapImage();
             image.BeginInit();
@@ -94,12 +104,20 @@ public static class ImageDecoder
             {
                 if (width >= height) image.DecodePixelWidth = max; else image.DecodePixelHeight = max;
             }
+            // The RAW codec returns the sensor's orientation, so turn portrait shots upright ourselves.
+            image.Rotation = exif.Orientation switch
+            {
+                3 => Rotation.Rotate180,
+                6 or 5 => Rotation.Rotate90,
+                8 or 7 => Rotation.Rotate270,
+                _ => Rotation.Rotate0,
+            };
             image.EndInit();
             image.Freeze();
 
             // The codec may hand back 16-bit-per-channel pixels; 8-bit is plenty for viewing and uses far less memory.
             BitmapSource result = image;
-            if (image.Format.BitsPerPixel > 32)
+            if (image.Format.BitsPerPixel > 32 && !keepHighBitDepth)
             {
                 var converted = new WriteableBitmap(new FormatConvertedBitmap(image, PixelFormats.Bgr32, null, 0));
                 converted.Freeze();
@@ -123,18 +141,19 @@ public static class ImageDecoder
         if (second is not null) yield return second;
     }
 
+    /// <summary>Pixel size of a preview before orientation; asks the Windows codec when the extractor didn't measure it.</summary>
+    public static (int Width, int Height) SizeOf(PreviewResult preview)
+    {
+        if (preview.Width > 0 && preview.Height > 0) return (preview.Width, preview.Height);
+        using var probe = new MemoryStream(preview.Image, writable: false);
+        var frame = BitmapDecoder.Create(probe, BitmapCreateOptions.DelayCreation | BitmapCreateOptions.IgnoreColorProfile,
+            BitmapCacheOption.None).Frames[0];
+        return (frame.PixelWidth, frame.PixelHeight);
+    }
+
     public static BitmapSource Decode(PreviewResult preview, int? maxLongSide)
     {
-        int width = preview.Width, height = preview.Height;
-        if (width == 0 || height == 0)
-        {
-            // Non-JPEG formats: ask the Windows codec for the size without decoding the pixels.
-            using var probe = new MemoryStream(preview.Image, writable: false);
-            var frame = BitmapDecoder.Create(probe, BitmapCreateOptions.DelayCreation | BitmapCreateOptions.IgnoreColorProfile,
-                BitmapCacheOption.None).Frames[0];
-            width = frame.PixelWidth;
-            height = frame.PixelHeight;
-        }
+        var (width, height) = SizeOf(preview);
 
         var image = new BitmapImage();
         image.BeginInit();

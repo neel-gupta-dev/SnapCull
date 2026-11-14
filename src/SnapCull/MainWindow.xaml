@@ -80,7 +80,9 @@
         <Button x:Name="OpenButton" Content="Open folder…" Focusable="False" Click="OpenButton_Click"
                 ToolTip="Open a folder of photos (Ctrl+O)" Margin="0,0,8,0" />
         <Button x:Name="ExportButton" Content="Copy / move picks…" Focusable="False" Click="ExportButton_Click" IsEnabled="False"
-                ToolTip="Copy or move your picks to another folder (Ctrl+E)" Margin="0,0,18,0" />
+                ToolTip="Copy or move your picks to another folder (Ctrl+E)" Margin="0,0,8,0" />
+        <Button x:Name="ConvertButton" Content="Convert…" Focusable="False" Click="ConvertButton_Click" IsEnabled="False"
+                ToolTip="Save photos as JPEG, PNG, TIFF, WebP or HEIC, optionally resized (Ctrl+Shift+E)" Margin="0,0,18,0" />
         <TextBlock Text="Show" VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,8,0" />
         <ComboBox x:Name="FilterCombo" Width="160" Focusable="False" SelectionChanged="FilterCombo_SelectionChanged" Margin="0,0,14,0" />
         <TextBlock Text="Sort" VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,8,0" />
@@ -172,8 +174,12 @@
     <!-- Status bar -->
     <Border x:Name="StatusBar" Grid.Row="3" Background="#191919" Padding="10,4">
       <DockPanel>
-        <TextBlock x:Name="CountsText" DockPanel.Dock="Right" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="16,0,0,0" />
-        <TextBlock x:Name="StatusText" Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextTrimming="CharacterEllipsis"
+        <TextBlock x:Name="CountsText" DockPanel.Dock="Right" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="16,0,0,0" VerticalAlignment="Center" />
+        <Button x:Name="StatusCancelButton" DockPanel.Dock="Right" Content="Cancel" Focusable="False" Padding="10,1" FontSize="12"
+                Margin="12,0,0,0" Visibility="Collapsed" Click="StatusCancelButton_Click" />
+        <Button x:Name="StatusShowButton" DockPanel.Dock="Right" Content="Show in Explorer" Focusable="False" Padding="10,1" FontSize="12"
+                Margin="12,0,0,0" Visibility="Collapsed" Click="StatusShowButton_Click" />
+        <TextBlock x:Name="StatusText" Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                    Text="Press ? for keyboard shortcuts" />
       </DockPanel>
     </Border>

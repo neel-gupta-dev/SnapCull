@@ -31,6 +31,9 @@ if (Test-Path $layout) { Remove-Item $layout -Recurse -Force }
     -p:PublishSingleFile=false -p:DebugType=none -p:Version=$Version -o $layout -nologo
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 
+# Debug symbols (e.g. libSkiaSharp.pdb from the NuGet package) are only useful to developers.
+Get-ChildItem $layout -Recurse -Filter *.pdb | Remove-Item -Force
+
 # 2. Manifest and tile images.
 (Get-Content (Join-Path $PSScriptRoot 'AppxManifest.xml') -Raw).Replace('$VERSION$', $packageVersion) |
     Set-Content (Join-Path $layout 'AppxManifest.xml') -Encoding UTF8

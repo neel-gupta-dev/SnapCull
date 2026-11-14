@@ -10,7 +10,7 @@
     <AssemblyName>SnapCull</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>SnapCull.ico</ApplicationIcon>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Product>SnapCull</Product>
     <Description>Fast photo culling for Windows</Description>
     <Authors>Neel Gupta</Authors>
@@ -23,6 +23,10 @@
     <ProjectReference Include="..\SnapCull.Core\SnapCull.Core.csproj" />
     <!-- Drawn by packaging/make-assets.ps1 -->
     <Resource Include="SnapCull.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="4.156.0" />
   </ItemGroup>
 
 </Project>

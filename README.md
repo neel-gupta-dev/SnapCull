@@ -32,6 +32,13 @@ Every RAW file has a full-size JPEG preview hidden inside it, put there by the c
 - **Subfolders:** cull a whole shoot spread over several card folders in one go.
 - **Filters:** picks, rejects, not yet flagged, ★ and up, blurry or soft, sharp.
 - **Copy or move your picks** (with their paired JPEG/HEIF and sidecars) to another folder. Existing files are never overwritten.
+- **Convert photos (Ctrl+Shift+E)** to **JPEG, PNG, TIFF (8 or 16-bit), WebP or HEIC**, from RAW or any supported image:
+  - resize to a long edge (for example 2048 px for Instagram) or a percentage;
+  - for RAW files, use the camera's preview (instant) or a full render of the raw data (most detail). *Automatic* picks the render when the preview is small;
+  - keep camera, lens, settings and date, and optionally **remove the GPS location** before sharing;
+  - name files with a pattern such as `{date}_{name}` or `Wedding_{seq}`.
+
+  Photos are saved the right way up. Your originals are never changed, and existing files are never overwritten. You can keep culling while a batch converts.
 - **Right-click a photo** to open it in your editor, show it in File Explorer, or copy its path.
 - **Undo** with Ctrl+Z.
 - Dark Windows 11 style UI, full-screen mode, and correct sizing on high-DPI screens.
@@ -53,6 +60,7 @@ Every RAW file has a full-size JPEG preview hidden inside it, put there by the c
 | I | Camera info and focus score |
 | F or F11 | Full screen |
 | Ctrl+Z / Ctrl+O / Ctrl+E | Undo / open folder / copy or move picks |
+| Ctrl+Shift+E | Convert photos |
 | ? or F1 | Show all shortcuts |
 
 ## Supported cameras
@@ -168,11 +176,13 @@ The most interesting file is [`PreviewExtractor.cs`](src/SnapCull.Core/PreviewEx
 - What you see is the camera's embedded JPEG, not a rendering of the raw data. This is the point of a culler, but it means some cameras show a smaller image at 100% zoom. Many Sony bodies embed only a 1616×1080 preview, Panasonic about 1920 px, and DJI drones and some phones under 1000 px. For those small ones SnapCull uses the Windows RAW codec when it's installed.
 - The focus check judges the photo at about 1000 px wide, so it won't notice a slight miss that only shows at 100%.
 - Sigma X3F and Leaf MOS files show their embedded preview, but no camera info.
+- Converting to HEIC needs Microsoft's *HEIF Image Extensions* and *HEVC Video Extensions*, and the HEIC files don't include camera info. Converted photos are saved without a colour profile, so they're treated as sRGB.
 
 ## Roadmap
 
 - [x] Focus check (blur detection)
 - [x] Compare two shots side by side
+- [x] Convert to JPEG, PNG, TIFF, WebP and HEIC
 - [ ] Detect closed eyes
 - [ ] Group burst shots and pick the sharpest automatically
 - [ ] Ingest from memory card, with verified backup to two drives
@@ -183,3 +193,5 @@ Contributions are welcome. If SnapCull can't read a preview from your camera's f
 ## License
 
 SnapCull is open source under the [MIT License](LICENSE), © 2026 Neel Gupta. You can use it, change it and share it, including in your own projects, as long as you keep the copyright notice.
+
+SnapCull uses [SkiaSharp](https://github.com/mono/SkiaSharp) to write WebP files. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

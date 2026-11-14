@@ -94,7 +94,7 @@ internal sealed class TiffParser
         long jpegOffset = 0, jpegLength = 0;
         uint[]? stripOffsets = null, stripCounts = null;
         var subIfds = new List<long>();
-        long exifIfd = 0;
+        long exifIfd = 0, gpsIfd = 0;
 
         for (int i = 0; i < count; i++)
         {
@@ -134,6 +134,7 @@ internal sealed class TiffParser
                     if (UInts(v) is { } subs) foreach (var s in subs) subIfds.Add(s);
                     break;
                 case 0x8769: exifIfd = FirstUInt(v); break;
+                case 0x8825: gpsIfd = FirstUInt(v); break;
                 case 0x829A: Exif.ExposureTime ??= Rational(v); break;
                 case 0x829D: Exif.FNumber ??= Rational(v); break;
                 case 0x8827: if (_iso == 0) _iso = (int)FirstUInt(v); break;
@@ -160,9 +161,71 @@ internal sealed class TiffParser
 
         foreach (var sub in subIfds) ParseIfd(sub, isFirstMainIfd: false, depth + 1);
         if (exifIfd != 0) ParseIfd(exifIfd, isFirstMainIfd: false, depth + 1);
+        if (gpsIfd != 0 && Exif.GpsLatitude is null) ParseGpsIfd(gpsIfd);
 
         var next = Io.Read(Stream, Base + offset + 2 + count * 12, 4);
         return next is null ? 0 : U32(next, 0);
+    }
+
+    /// <summary>The GPS IFD reuses small tag numbers (1–6) with their own meanings, so it gets its own reader.</summary>
+    void ParseGpsIfd(long offset)
+    {
+        if (!_visited.Add(offset)) return;
+        var countBytes = Io.Read(Stream, Base + offset, 2);
+        if (countBytes is null) return;
+        int count = U16(countBytes, 0);
+        if (count == 0 || count > 100) return;
+        var entries = Io.Read(Stream, Base + offset + 2, count * 12);
+        if (entries is null) return;
+
+        string? latRef = null, lonRef = null;
+        double[]? lat = null, lon = null;
+        double? alt = null;
+        bool belowSeaLevel = false;
+        for (int i = 0; i < count; i++)
+        {
+            int e = i * 12;
+            ushort tag = U16(entries, e), type = U16(entries, e + 2);
+            uint n = U32(entries, e + 4);
+            int unit = TypeSize(type);
+            if (unit == 0 || n == 0) continue;
+            long total = (long)unit * n;
+            var v = new Entry(entries, e, type, n, total, total <= 4 ? -1 : U32(entries, e + 8));
+            switch (tag)
+            {
+                case 1: latRef = Ascii(v); break;
+                case 2: lat = Rationals(v); break;
+                case 3: lonRef = Ascii(v); break;
+                case 4: lon = Rationals(v); break;
+                case 5: belowSeaLevel = FirstUInt(v) == 1; break;
+                case 6: alt = Rational(v); break;
+            }
+        }
+
+        static double? Degrees(double[]? dms) => dms is { Length: >= 1 }
+            ? dms[0] + (dms.Length > 1 ? dms[1] / 60 : 0) + (dms.Length > 2 ? dms[2] / 3600 : 0)
+            : null;
+        if (Degrees(lat) is double la && Degrees(lon) is double lo && !(la == 0 && lo == 0))
+        {
+            Exif.GpsLatitude = latRef?.StartsWith('S') == true ? -la : la;
+            Exif.GpsLongitude = lonRef?.StartsWith('W') == true ? -lo : lo;
+            if (alt is double a) Exif.GpsAltitude = belowSeaLevel ? -a : a;
+        }
+    }
+
+    double[]? Rationals(Entry v)
+    {
+        if (v.Type is not (5 or 10)) return null;
+        var b = ValueBytes(v);
+        if (b is null) return null;
+        var result = new double[v.Count];
+        for (int i = 0; i < result.Length; i++)
+        {
+            double num = v.Type == 5 ? U32(b, i * 8) : (int)U32(b, i * 8);
+            double den = v.Type == 5 ? U32(b, i * 8 + 4) : (int)U32(b, i * 8 + 4);
+            result[i] = den == 0 ? 0 : num / den;
+        }
+        return result;
     }
 
     readonly record struct Entry(byte[] Entries, int Index, ushort Type, uint Count, long Total, long ValueOffset);

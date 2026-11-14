@@ -54,6 +54,7 @@ public partial class MainWindow : Window
         new("F or F11", "Full screen"),
         new("Ctrl + Z", "Undo"),
         new("Ctrl + O / E", "Open folder / copy or move picks"),
+        new("Ctrl + Shift + E", "Convert to JPEG, PNG, TIFF, WebP or HEIC"),
         new("? or F1", "This help"),
         new("Esc", "Close help, zoom, compare or full screen"),
     ];
@@ -70,7 +71,7 @@ public partial class MainWindow : Window
     ViewFilter _filter = ViewFilter.All;
     string? _folder;
     PhotoViewer _active;
-    bool _compare, _suppressSelection, _suppressOptions, _busy;
+    bool _compare, _suppressSelection, _suppressOptions, _busy, _converting;
     int _wheelDelta;
 
     bool _fullscreen;
@@ -92,6 +93,11 @@ public partial class MainWindow : Window
             viewer.ClickedAt += Viewer_ClickedAt;
             viewer.Panned += Viewer_Panned;
             viewer.Activated += (s, _) => { if (_compare) SetActive((PhotoViewer)s!); };
+            viewer.ConvertRequested += (s, _) =>
+            {
+                if (_compare) SetActive((PhotoViewer)s!);
+                ShowConvert(startWithCurrent: true);
+            };
         }
 
         _suppressOptions = true;
@@ -142,7 +148,7 @@ public partial class MainWindow : Window
 
     void ChooseFolder()
     {
-        if (_busy) return;
+        if (_busy || _converting) return;
         var dialog = new OpenFolderDialog { Title = "Choose a folder of photos" };
         if ((_folder ?? _settings.LastFolder) is { } start && Directory.Exists(start)) dialog.InitialDirectory = start;
         if (dialog.ShowDialog(this) == true) _ = OpenPathAsync(dialog.FolderName);
@@ -162,7 +168,7 @@ public partial class MainWindow : Window
     /// <summary>Opens a folder, or the folder containing a file (and selects that file).</summary>
     async Task OpenPathAsync(string path, string? selectPath = null)
     {
-        if (_busy) return;
+        if (_busy || _converting) return;
         string folder;
         if (File.Exists(path)) { folder = Path.GetDirectoryName(Path.GetFullPath(path))!; selectPath ??= Path.GetFullPath(path); }
         else if (Directory.Exists(path)) folder = Path.GetFullPath(path);
@@ -261,7 +267,7 @@ public partial class MainWindow : Window
         _loader = new BackgroundLoader(photos, Dispatcher, _settings.CheckFocus);
         _loader.FocusProgress += Loader_FocusProgress;
         _loader.Start();
-        ExportButton.IsEnabled = photos.Count > 0;
+        ExportButton.IsEnabled = ConvertButton.IsEnabled = photos.Count > 0;
         UpdateCounts();
     }
 
@@ -289,7 +295,7 @@ public partial class MainWindow : Window
         if (_suppressOptions) return;
         _settings.SortByCaptureTime = SortCombo.SelectedIndex == 1;
         _settings.Save();
-        if (_items.Count == 0 || _busy) return;
+        if (_items.Count == 0 || _busy || _converting) return;
 
         var keep = Current;
         var photos = _items.ToList();
@@ -656,6 +662,7 @@ public partial class MainWindow : Window
             switch (key)
             {
                 case Key.O: ChooseFolder(); break;
+                case Key.E when (Keyboard.Modifiers & ModifierKeys.Shift) != 0: ShowConvert(startWithCurrent: false); break;
                 case Key.E: ShowExport(); break;
                 case Key.Z: Undo(); break;
                 default: handled = false; break;
@@ -773,13 +780,100 @@ public partial class MainWindow : Window
 
     void ExportButton_Click(object sender, RoutedEventArgs e) => ShowExport();
 
+    // ───────────────────────────── Convert ─────────────────────────────
+
+    CancellationTokenSource? _convertCts;
+    string? _lastConvertFolder;
+
+    void ConvertButton_Click(object sender, RoutedEventArgs e) => ShowConvert(startWithCurrent: false);
+
+    async void ShowConvert(bool startWithCurrent)
+    {
+        if (_folder is null || _items.Count == 0 || _busy || _converting) return;
+        var shown = _view.Cast<PhotoItem>().ToList();
+        var dialog = new ConvertWindow(_items.ToList(), shown, Filters[(int)_filter].Label, Current, startWithCurrent, _folder, _settings.LastConvert)
+            { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Request is not var (photos, options)) return;
+
+        _settings.LastConvert = options with { Destination = "" };
+        _settings.Save();
+
+        _busy = true;
+        _convertCts = new CancellationTokenSource();
+        ExportButton.IsEnabled = ConvertButton.IsEnabled = OpenButton.IsEnabled = false;
+        StatusShowButton.Visibility = Visibility.Collapsed;
+        StatusCancelButton.Visibility = Visibility.Visible;
+        var format = options.Format.ToString().ToUpperInvariant();
+        SetStatus($"Converting to {format}… 0 of {photos.Count}");
+        try
+        {
+            var progress = new Progress<int>(n => SetStatus($"Converting to {format}… {n} of {photos.Count}"));
+            var input = photos.Select(p => (p.Files, p.Exif)).ToList();
+            var token = _convertCts.Token;
+            var result = await Task.Run(() => PhotoConverter.Run(input, options, progress, token));
+
+            var message = token.IsCancellationRequested
+                ? $"Stopped: {result.Converted} of {photos.Count} photos converted to {format}"
+                : $"Converted {result.Converted} photo{(result.Converted == 1 ? "" : "s")} to {format} in {options.Destination}";
+            if (result.UsedPreviewInstead > 0)
+                message += $"   ·   {result.UsedPreviewInstead} RAW file{(result.UsedPreviewInstead == 1 ? "" : "s")} used the camera preview (Windows couldn't render the RAW data)";
+            if (result.Errors.Count > 0)
+            {
+                message += $"   ·   {result.Errors.Count} failed";
+                MessageBox.Show(this, string.Join("\n", result.Errors.Take(15)), "Some photos couldn't be converted",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            SetStatus(message);
+            if (result.Converted > 0)
+            {
+                _lastConvertFolder = options.Destination;
+                StatusShowButton.Tag = result.FirstOutput;
+                StatusShowButton.Visibility = Visibility.Visible;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            SetStatus($"Convert failed: {ex.Message}");
+        }
+        finally
+        {
+            _busy = false;
+            _convertCts.Dispose();
+            _convertCts = null;
+            StatusCancelButton.Visibility = Visibility.Collapsed;
+            OpenButton.IsEnabled = true;
+            ExportButton.IsEnabled = ConvertButton.IsEnabled = _items.Count > 0;
+        }
+    }
+
+    void StatusCancelButton_Click(object sender, RoutedEventArgs e)
+    {
+        _convertCts?.Cancel();
+        SetStatus("Stopping after the photos already in progress…");
+    }
+
+    void StatusShowButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (StatusShowButton.Tag is string file && File.Exists(file))
+                System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{file}\"");
+            else if (_lastConvertFolder is { } folder && Directory.Exists(folder))
+                System.Diagnostics.Process.Start("explorer.exe", $"\"{folder}\"");
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            SetStatus($"Couldn't open File Explorer: {ex.Message}");
+        }
+    }
+
     async void ShowExport()
     {
-        if (_folder is null || _items.Count == 0 || _busy) return;
+        if (_folder is null || _items.Count == 0 || _busy || _converting) return;
         var dialog = new ExportWindow(_items.ToList(), _folder) { Owner = this };
         if (dialog.ShowDialog() != true || dialog.Request is not { } request) return;
 
-        _busy = true;
+        _converting = true;
         ExportButton.IsEnabled = OpenButton.IsEnabled = false;
         try
         {
@@ -814,9 +908,9 @@ public partial class MainWindow : Window
         }
         finally
         {
-            _busy = false;
+            _converting = false;
             OpenButton.IsEnabled = true;
-            ExportButton.IsEnabled = _items.Count > 0;
+            ExportButton.IsEnabled = ConvertButton.IsEnabled = _items.Count > 0;
         }
     }
 
@@ -825,6 +919,7 @@ public partial class MainWindow : Window
     void Window_Closing(object? sender, CancelEventArgs e)
     {
         _loader?.Cancel();
+        _convertCts?.Cancel();
         _settings.Save();
         // Give pending rating writes a moment to finish so nothing is lost.
         _writer.FlushAsync().Wait(TimeSpan.FromSeconds(5));

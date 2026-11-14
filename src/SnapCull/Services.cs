@@ -214,6 +214,8 @@ public sealed class AppSettings
     public bool CheckFocus { get; set; } = true;
     public bool IncludeSubfolders { get; set; }
     public bool SortByCaptureTime { get; set; }
+    /// <summary>The last Convert settings, so the dialog opens the way it was used (except the destination).</summary>
+    public ConvertOptions? LastConvert { get; set; }
 
     public static AppSettings Load()
     {
