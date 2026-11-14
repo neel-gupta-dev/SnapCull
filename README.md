@@ -2,7 +2,7 @@
 
 # SnapCull
 
-**Fast, free photo culling for Windows.** Open a folder straight off your memory card, flip through hundreds of RAW files instantly, and pick the keepers with one key per photo. SnapCull flags blurry shots for you, puts similar frames side by side, and saves your ratings as `.xmp` sidecars that Lightroom, Capture One, Bridge and darktable pick up automatically.
+**Fast, free photo culling for Windows.** [Get it from the Microsoft Store](https://apps.microsoft.com/detail/9PLWMRJ8BVTS). Open a folder straight off your memory card, flip through hundreds of RAW files instantly, and pick the keepers with one key per photo. SnapCull flags blurry shots for you, puts similar frames side by side, and saves your ratings as `.xmp` sidecars that Lightroom, Capture One, Bridge and darktable pick up automatically.
 
 ![SnapCull showing a Nikon Z f RAW file with camera info, focus score, histogram and the filmstrip](docs/screenshot-viewer.jpg)
 
@@ -102,7 +102,7 @@ Scores run from 0 to 100. From 45 up a photo looks sharp, and below 33 it is pro
 
 ## Download and run
 
-- **Microsoft Store** (coming soon): [SnapCull on the Microsoft Store](https://apps.microsoft.com/detail/9PLWMRJ8BVTS). Installs and updates automatically, with no security warnings.
+- **Microsoft Store (recommended):** [Get SnapCull from the Microsoft Store](https://apps.microsoft.com/detail/9PLWMRJ8BVTS). Installs and updates automatically, with no security warnings.
 - **GitHub:** download `SnapCull.exe` from the [Releases](https://github.com/neel-gupta-dev/SnapCull/releases) page and run it. There's nothing to install. If Windows SmartScreen warns you, click **More info → Run anyway**, because this copy isn't code-signed.
 
 You can also pass a folder or a photo on the command line: `SnapCull.exe "D:\Photos\2026-11-14 Wedding"`.
