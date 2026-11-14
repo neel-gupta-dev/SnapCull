@@ -1,3 +1,5 @@
+<img src="packaging/logo-512.png" alt="SnapCull logo" width="96" align="right">
+
 # SnapCull
 
 **Fast, free photo culling for Windows.** Open a folder straight off your memory card, flip through hundreds of RAW files instantly, and pick the keepers with one key per photo. SnapCull flags blurry shots for you, puts similar frames side by side, and saves your ratings as `.xmp` sidecars that Lightroom, Capture One, Bridge and darktable pick up automatically.
@@ -96,7 +98,8 @@ Scores run from 0 to 100. From 45 up a photo looks sharp, and below 33 it is pro
 
 ## Download and run
 
-Download `SnapCull.exe` from the [Releases](https://github.com/neel-gupta-dev/SnapCull/releases) page and run it. If Windows SmartScreen warns you, click **More info → Run anyway**. The app isn't code-signed yet.
+- **Microsoft Store** (coming soon): [SnapCull on the Microsoft Store](https://apps.microsoft.com/detail/9PLWMRJ8BVTS). Installs and updates automatically, with no security warnings.
+- **GitHub:** download `SnapCull.exe` from the [Releases](https://github.com/neel-gupta-dev/SnapCull/releases) page and run it. There's nothing to install. If Windows SmartScreen warns you, click **More info → Run anyway**, because this copy isn't code-signed.
 
 You can also pass a folder or a photo on the command line: `SnapCull.exe "D:\Photos\2026-11-14 Wedding"`.
 
@@ -136,6 +139,14 @@ Build a single self-contained `.exe` that doesn't need .NET installed:
 dotnet publish src/SnapCull -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish
 ```
 
+### Microsoft Store package (MSIX)
+
+```bash
+powershell -File packaging/build-msix.ps1
+```
+
+This builds `packaging/out/SnapCull_<version>_x64.msix`, ready to upload in Partner Center. The Store signs it, so no certificate is needed. On first run the script downloads Microsoft's `Microsoft.Windows.SDK.BuildTools` package from nuget.org to get MakeAppx and MakePri, so you don't need a Windows SDK install. The package identity in [`packaging/AppxManifest.xml`](packaging/AppxManifest.xml) belongs to the official Store listing; forks should use their own. The icon and tiles are drawn by [`packaging/make-assets.ps1`](packaging/make-assets.ps1).
+
 ## Project layout
 
 ```
@@ -143,6 +154,7 @@ src/SnapCull.Core/    No UI. RAW preview extraction, EXIF, XMP sidecars, focus a
 src/SnapCull/         The WPF app: viewers, compare mode, filmstrip, keyboard handling
 tools/SnapCull.Probe/ Command-line checker for camera files
 tests/                xUnit tests for SnapCull.Core
+packaging/            Microsoft Store package: manifest, icons, build script
 ```
 
 The most interesting file is [`PreviewExtractor.cs`](src/SnapCull.Core/PreviewExtractor.cs), which finds the embedded preview in each RAW format.
