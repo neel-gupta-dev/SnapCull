@@ -96,7 +96,7 @@ Scores run from 0 to 100. From 45 up a photo looks sharp, and below 33 it is pro
 
 ## Download and run
 
-Download `SnapCull.exe` from the [Releases](../../releases) page and run it. If Windows SmartScreen warns you, click **More info → Run anyway**. The app isn't code-signed yet.
+Download `SnapCull.exe` from the [Releases](https://github.com/neel-gupta-dev/SnapCull/releases) page and run it. If Windows SmartScreen warns you, click **More info → Run anyway**. The app isn't code-signed yet.
 
 You can also pass a folder or a photo on the command line: `SnapCull.exe "D:\Photos\2026-11-14 Wedding"`.
 
@@ -105,7 +105,7 @@ You can also pass a folder or a photo on the command line: `SnapCull.exe "D:\Pho
 You'll need the [.NET 10 SDK](https://dotnet.microsoft.com/download) on Windows 10 or 11.
 
 ```bash
-git clone https://github.com/<you>/SnapCull.git
+git clone https://github.com/neel-gupta-dev/SnapCull.git
 cd SnapCull
 dotnet run --project src/SnapCull
 ```
