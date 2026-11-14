@@ -1,0 +1,15 @@
+<Application x:Class="SnapCull.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:SnapCull"
+             ShutdownMode="OnMainWindowClose">
+  <Application.Resources>
+    <local:VisibleIfConverter x:Key="VisibleIf" />
+    <SolidColorBrush x:Key="PanelBrush" Color="#1F1F1F" />
+    <SolidColorBrush x:Key="ViewerBrush" Color="#121212" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#4FA3FF" />
+    <SolidColorBrush x:Key="MutedTextBrush" Color="#A0A0A0" />
+    <SolidColorBrush x:Key="OverlayBrush" Color="#A6000000" />
+    <SolidColorBrush x:Key="StarBrush" Color="#FFC940" />
+  </Application.Resources>
+</Application>

@@ -1,0 +1,29 @@
+<Window x:Class="SnapCull.ExportWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Copy or move photos" Width="540" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Background="{StaticResource PanelBrush}">
+  <StackPanel Margin="22">
+    <TextBlock Text="Which photos" FontWeight="SemiBold" Margin="0,0,0,6" />
+    <ComboBox x:Name="WhichCombo" SelectionChanged="Inputs_Changed" />
+
+    <TextBlock Text="What to do" FontWeight="SemiBold" Margin="0,18,0,6" />
+    <StackPanel Orientation="Horizontal">
+      <RadioButton x:Name="CopyRadio" Content="Copy (keep the originals here)" IsChecked="True" Margin="0,0,24,0" Checked="Inputs_Changed" />
+      <RadioButton x:Name="MoveRadio" Content="Move" Checked="Inputs_Changed" />
+    </StackPanel>
+
+    <TextBlock Text="Destination folder" FontWeight="SemiBold" Margin="0,18,0,6" />
+    <DockPanel>
+      <Button DockPanel.Dock="Right" Content="Browse…" Margin="8,0,0,0" Click="Browse_Click" />
+      <TextBox x:Name="DestinationBox" TextChanged="Inputs_Changed" />
+    </DockPanel>
+
+    <TextBlock x:Name="SummaryText" Margin="0,18,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedTextBrush}" />
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+      <Button x:Name="OkButton" Content="Copy" IsDefault="True" MinWidth="96" Click="Ok_Click" />
+      <Button Content="Cancel" IsCancel="True" MinWidth="96" Margin="8,0,0,0" />
+    </StackPanel>
+  </StackPanel>
+</Window>

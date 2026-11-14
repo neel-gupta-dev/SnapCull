@@ -1,0 +1,100 @@
+<UserControl x:Class="SnapCull.PhotoViewer"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{StaticResource ViewerBrush}" ClipToBounds="True" Focusable="False">
+  <Grid>
+    <ScrollViewer x:Name="Scroller" Background="Transparent" Focusable="False"
+                  HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled"
+                  PreviewMouseLeftButtonDown="Scroller_MouseDown" PreviewMouseMove="Scroller_MouseMove"
+                  PreviewMouseLeftButtonUp="Scroller_MouseUp" PreviewMouseRightButtonDown="Scroller_RightDown">
+      <ScrollViewer.ContextMenu>
+        <ContextMenu x:Name="PhotoMenu" Opened="PhotoMenu_Opened">
+          <MenuItem Header="Show in File Explorer" Click="ShowInExplorer_Click" />
+          <MenuItem Header="Open in default app" Click="OpenDefault_Click" />
+          <MenuItem Header="Open with…" Click="OpenWith_Click" />
+          <MenuItem x:Name="OpenRawItem" Header="Open RAW file in default app" Click="OpenRaw_Click" />
+          <Separator />
+          <MenuItem Header="Copy file path" Click="CopyPath_Click" />
+        </ContextMenu>
+      </ScrollViewer.ContextMenu>
+      <Image x:Name="MainImage" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
+             RenderOptions.BitmapScalingMode="HighQuality" />
+    </ScrollViewer>
+
+    <!-- Flag, stars, colour label and focus warning -->
+    <StackPanel x:Name="BadgePanel" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top"
+                Margin="14" IsHitTestVisible="False">
+      <Border CornerRadius="4" Padding="9,3" Margin="0,0,8,0" Background="{Binding FlagBrush}"
+              Visibility="{Binding FlagText, Converter={StaticResource VisibleIf}}">
+        <TextBlock Text="{Binding FlagText}" FontWeight="Bold" Foreground="White" />
+      </Border>
+      <Border CornerRadius="4" Padding="8,1" Margin="0,0,8,0" Background="{StaticResource OverlayBrush}"
+              Visibility="{Binding StarsText, Converter={StaticResource VisibleIf}}">
+        <TextBlock Text="{Binding StarsText}" Foreground="{StaticResource StarBrush}" FontSize="17" />
+      </Border>
+      <Ellipse Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center" Fill="{Binding LabelBrush}" Stroke="#60000000"
+               Visibility="{Binding HasLabel, Converter={StaticResource VisibleIf}}" />
+      <Border CornerRadius="4" Padding="8,3" Background="{Binding FocusBadgeBrush}" ToolTip="{Binding FocusLine}"
+              Visibility="{Binding FocusBadgeText, Converter={StaticResource VisibleIf}}">
+        <TextBlock Text="{Binding FocusBadgeText}" FontWeight="Bold" Foreground="White" />
+      </Border>
+    </StackPanel>
+
+    <!-- File name and position -->
+    <Border x:Name="NamePanel" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14" Padding="11,6" CornerRadius="4"
+            Background="{StaticResource OverlayBrush}" IsHitTestVisible="False" Visibility="Collapsed">
+      <StackPanel>
+        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" Foreground="#F2F2F2" HorizontalAlignment="Right" />
+        <TextBlock x:Name="PositionLabel" Foreground="{StaticResource MutedTextBrush}" FontSize="12" HorizontalAlignment="Right" />
+      </StackPanel>
+    </Border>
+
+    <!-- Camera settings and focus -->
+    <Border x:Name="InfoHost" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="14" IsHitTestVisible="False">
+      <Border Padding="12,8" CornerRadius="4" Background="{StaticResource OverlayBrush}"
+              Visibility="{Binding HasInfo, Converter={StaticResource VisibleIf}}">
+        <StackPanel>
+          <TextBlock Text="{Binding CameraLine}" FontWeight="SemiBold" Foreground="#F2F2F2"
+                     Visibility="{Binding CameraLine, Converter={StaticResource VisibleIf}}" />
+          <TextBlock Text="{Binding LensLine}" Foreground="#C8C8C8"
+                     Visibility="{Binding LensLine, Converter={StaticResource VisibleIf}}" />
+          <TextBlock Text="{Binding SettingsLine}" Foreground="#F2F2F2" Margin="0,4,0,0"
+                     Visibility="{Binding SettingsLine, Converter={StaticResource VisibleIf}}" />
+          <TextBlock Text="{Binding DateLine}" Foreground="{StaticResource MutedTextBrush}" FontSize="12"
+                     Visibility="{Binding DateLine, Converter={StaticResource VisibleIf}}" />
+          <TextBlock Text="{Binding FocusLine}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="0,4,0,0"
+                     Visibility="{Binding FocusLine, Converter={StaticResource VisibleIf}}" />
+        </StackPanel>
+      </Border>
+    </Border>
+
+    <!-- Histogram -->
+    <Border x:Name="HistogramHost" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="14" Padding="10,8,10,6"
+            CornerRadius="4" Background="{StaticResource OverlayBrush}" IsHitTestVisible="False" Visibility="Collapsed">
+      <StackPanel>
+        <Viewbox Width="256" Height="96" Stretch="Fill">
+          <Canvas Width="256" Height="100" ClipToBounds="True">
+            <Path x:Name="RedPath" Fill="#8CE05050" />
+            <Path x:Name="GreenPath" Fill="#8C50C060" />
+            <Path x:Name="BluePath" Fill="#8C5080E0" />
+            <Path x:Name="LumaPath" Stroke="#CCFFFFFF" StrokeThickness="0.8" />
+          </Canvas>
+        </Viewbox>
+        <TextBlock x:Name="ClippingText" Foreground="{StaticResource MutedTextBrush}" FontSize="11" Margin="0,5,0,0" />
+      </StackPanel>
+    </Border>
+
+    <Border x:Name="ZoomBadge" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="14" Padding="9,3" CornerRadius="4"
+            Background="{StaticResource OverlayBrush}" IsHitTestVisible="False" Visibility="Collapsed">
+      <TextBlock Text="100%" Foreground="White" />
+    </Border>
+
+    <TextBlock x:Name="LoadingText" Text="Loading…" Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Center"
+               VerticalAlignment="Bottom" Margin="0,0,0,18" IsHitTestVisible="False" Visibility="Collapsed" />
+    <TextBlock x:Name="ErrorText" Foreground="#E54848" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="15"
+               TextWrapping="Wrap" TextAlignment="Center" MaxWidth="480" IsHitTestVisible="False" Visibility="Collapsed" />
+
+    <!-- Marks the side that keys apply to in compare mode -->
+    <Border x:Name="ActiveFrame" BorderBrush="{StaticResource AccentBrush}" BorderThickness="3" IsHitTestVisible="False" Visibility="Collapsed" />
+  </Grid>
+</UserControl>

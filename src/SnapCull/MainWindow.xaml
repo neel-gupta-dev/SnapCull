@@ -1,0 +1,181 @@
+<Window x:Class="SnapCull.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:SnapCull"
+        Title="SnapCull" Width="1400" Height="880" MinWidth="820" MinHeight="500"
+        WindowStartupLocation="CenterScreen" AllowDrop="True"
+        Background="{StaticResource ViewerBrush}"
+        PreviewKeyDown="Window_PreviewKeyDown" DragOver="Window_DragOver" Drop="Window_Drop"
+        Loaded="Window_Loaded" Closing="Window_Closing">
+
+  <Window.Resources>
+    <Style x:Key="FilmstripItem" TargetType="ListBoxItem">
+      <Setter Property="Margin" Value="2,0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ListBoxItem">
+            <Border x:Name="Bd" BorderThickness="2" BorderBrush="Transparent" CornerRadius="5" Background="Transparent" Padding="1">
+              <ContentPresenter />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#2E2E2E" />
+              </Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <DataTemplate x:Key="FilmstripTemplate" DataType="{x:Type local:PhotoItem}">
+      <Grid Width="128" Height="90" ToolTip="{Binding DisplayName}">
+        <Grid.Style>
+          <Style TargetType="Grid">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding IsRejected}" Value="True">
+                <Setter Property="Opacity" Value="0.35" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Grid.Style>
+        <Border Background="#2A2A2A" CornerRadius="3" />
+        <Image Source="{Binding Thumbnail}" Stretch="Uniform" Margin="2" RenderOptions.BitmapScalingMode="HighQuality" />
+        <TextBlock Text="!" Foreground="#E54848" FontWeight="Bold" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Visibility="{Binding Error, Converter={StaticResource VisibleIf}}" ToolTip="{Binding Error}" />
+        <Rectangle Height="4" VerticalAlignment="Top" RadiusX="2" RadiusY="2" Fill="{Binding LabelBrush}"
+                   Visibility="{Binding HasLabel, Converter={StaticResource VisibleIf}}" />
+        <Border Width="18" Height="18" CornerRadius="9" Margin="0,7,5,0" HorizontalAlignment="Right" VerticalAlignment="Top"
+                Background="{Binding FlagBrush}" Visibility="{Binding FlagText, Converter={StaticResource VisibleIf}}">
+          <TextBlock Text="{Binding FlagGlyph}" Foreground="White" FontSize="11" FontWeight="Bold"
+                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+        <Border Margin="5,0,0,5" Padding="4,0" CornerRadius="3" HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                Background="{StaticResource OverlayBrush}" Visibility="{Binding StarsText, Converter={StaticResource VisibleIf}}">
+          <TextBlock Text="{Binding StarsText}" Foreground="{StaticResource StarBrush}" FontSize="11" />
+        </Border>
+        <Border Margin="0,0,5,5" Padding="4,0" CornerRadius="3" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                Background="{Binding FocusBadgeBrush}" ToolTip="{Binding FocusLine}"
+                Visibility="{Binding FocusBadgeText, Converter={StaticResource VisibleIf}}">
+          <TextBlock Text="{Binding FocusBadgeText}" Foreground="White" FontSize="9" FontWeight="Bold" />
+        </Border>
+      </Grid>
+    </DataTemplate>
+  </Window.Resources>
+
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <!-- Toolbar -->
+    <Border x:Name="Toolbar" Grid.Row="0" Background="{StaticResource PanelBrush}" Padding="10,7">
+      <DockPanel LastChildFill="False">
+        <Button x:Name="OpenButton" Content="Open folder…" Focusable="False" Click="OpenButton_Click"
+                ToolTip="Open a folder of photos (Ctrl+O)" Margin="0,0,8,0" />
+        <Button x:Name="ExportButton" Content="Copy / move picks…" Focusable="False" Click="ExportButton_Click" IsEnabled="False"
+                ToolTip="Copy or move your picks to another folder (Ctrl+E)" Margin="0,0,18,0" />
+        <TextBlock Text="Show" VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,8,0" />
+        <ComboBox x:Name="FilterCombo" Width="160" Focusable="False" SelectionChanged="FilterCombo_SelectionChanged" Margin="0,0,14,0" />
+        <TextBlock Text="Sort" VerticalAlignment="Center" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,8,0" />
+        <ComboBox x:Name="SortCombo" Width="130" Focusable="False" SelectionChanged="SortCombo_SelectionChanged" Margin="0,0,14,0"
+                  ToolTip="Capture time keeps photos from several cameras in shooting order">
+          <ComboBoxItem Content="File name" />
+          <ComboBoxItem Content="Capture time" />
+        </ComboBox>
+        <CheckBox x:Name="SubfoldersCheck" Content="Subfolders" Focusable="False" VerticalAlignment="Center" Margin="0,0,14,0"
+                  Click="SubfoldersCheck_Click" ToolTip="Also show photos in folders inside this one" />
+        <CheckBox x:Name="AutoAdvanceCheck" Content="Auto-advance" Focusable="False" VerticalAlignment="Center" Click="AutoAdvanceCheck_Click"
+                  ToolTip="Go to the next photo after rating or flagging (A). Hold Shift while rating to do the opposite." />
+
+        <Button DockPanel.Dock="Right" Content="Shortcuts" Focusable="False" Click="HelpButton_Click" ToolTip="Keyboard shortcuts (?)" />
+        <ToggleButton x:Name="HistogramButton" DockPanel.Dock="Right" Content="Histogram" Focusable="False" Margin="0,0,8,0"
+                      Click="HistogramButton_Click" ToolTip="Show the histogram and clipping (H)" />
+        <ToggleButton x:Name="CompareButton" DockPanel.Dock="Right" Content="Compare" Focusable="False" Margin="0,0,8,0"
+                      Click="CompareButton_Click" ToolTip="Show two photos side by side (C)" />
+      </DockPanel>
+    </Border>
+
+    <!-- Viewers: the second one is only shown in compare mode -->
+    <Grid x:Name="ViewerHost" Grid.Row="1" PreviewMouseWheel="ViewerHost_PreviewMouseWheel">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition x:Name="CompareColumn" Width="0" />
+      </Grid.ColumnDefinitions>
+
+      <local:PhotoViewer x:Name="ViewerA" Grid.Column="0" />
+      <local:PhotoViewer x:Name="ViewerB" Grid.Column="1" Margin="3,0,0,0" Visibility="Collapsed" />
+
+      <!-- Shown when there is nothing to display -->
+      <StackPanel x:Name="EmptyState" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="580">
+        <TextBlock x:Name="EmptyTitle" Text="Open a folder of photos to start culling" FontSize="22" Foreground="#E0E0E0"
+                   HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+        <TextBlock x:Name="EmptySubtitle" Foreground="{StaticResource MutedTextBrush}" Margin="0,10,0,18"
+                   HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                   Text="RAW files from Canon, Nikon, Sony, Fujifilm, OM System, Panasonic, Pentax, Leica, Hasselblad and more, phone and drone DNGs, plus JPEG, HEIC, PNG, TIFF and WebP. You can also drop a folder onto this window." />
+        <StackPanel x:Name="EmptyButtons" Orientation="Horizontal" HorizontalAlignment="Center">
+          <Button Content="Open folder…" Padding="18,8" Focusable="False" Click="OpenButton_Click" />
+          <Button x:Name="ReopenButton" Padding="18,8" Margin="10,0,0,0" Focusable="False" Click="ReopenButton_Click" Visibility="Collapsed" />
+        </StackPanel>
+      </StackPanel>
+
+      <!-- Keyboard shortcuts -->
+      <Border x:Name="HelpOverlay" Grid.ColumnSpan="2" Background="#E6101010" Visibility="Collapsed" MouseLeftButtonDown="HelpOverlay_MouseDown">
+        <Border HorizontalAlignment="Center" VerticalAlignment="Center" Background="#242424" CornerRadius="8" Padding="28,22" MaxWidth="880">
+          <StackPanel>
+            <TextBlock Text="Keyboard shortcuts" FontSize="20" FontWeight="SemiBold" Foreground="#F2F2F2" Margin="0,0,0,16" />
+            <ItemsControl x:Name="ShortcutList">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <UniformGrid Columns="2" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type local:Shortcut}">
+                  <DockPanel Margin="0,3,24,3">
+                    <Border DockPanel.Dock="Left" Width="118" Margin="0,0,12,0">
+                      <Border HorizontalAlignment="Left" VerticalAlignment="Center" Background="#383838" CornerRadius="4" Padding="7,2">
+                        <TextBlock Text="{Binding Keys}" Foreground="#F2F2F2" FontFamily="Segoe UI Semibold" />
+                      </Border>
+                    </Border>
+                    <TextBlock Text="{Binding Action}" Foreground="#C8C8C8" VerticalAlignment="Center" TextWrapping="Wrap" />
+                  </DockPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Text="Click anywhere or press Esc to close" Foreground="{StaticResource MutedTextBrush}" Margin="0,16,0,0" />
+          </StackPanel>
+        </Border>
+      </Border>
+    </Grid>
+
+    <!-- Filmstrip -->
+    <ListBox x:Name="Filmstrip" Grid.Row="2" Height="122" Padding="6,4" BorderThickness="0" Focusable="False"
+             Background="{StaticResource PanelBrush}" SelectionMode="Single"
+             ItemContainerStyle="{StaticResource FilmstripItem}" ItemTemplate="{StaticResource FilmstripTemplate}"
+             ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Disabled"
+             VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+             SelectionChanged="Filmstrip_SelectionChanged">
+      <ListBox.ItemsPanel>
+        <ItemsPanelTemplate>
+          <VirtualizingStackPanel Orientation="Horizontal" />
+        </ItemsPanelTemplate>
+      </ListBox.ItemsPanel>
+    </ListBox>
+
+    <!-- Status bar -->
+    <Border x:Name="StatusBar" Grid.Row="3" Background="#191919" Padding="10,4">
+      <DockPanel>
+        <TextBlock x:Name="CountsText" DockPanel.Dock="Right" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="16,0,0,0" />
+        <TextBlock x:Name="StatusText" Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextTrimming="CharacterEllipsis"
+                   Text="Press ? for keyboard shortcuts" />
+      </DockPanel>
+    </Border>
+  </Grid>
+</Window>
