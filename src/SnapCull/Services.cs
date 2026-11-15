@@ -69,6 +69,9 @@ public sealed class BackgroundLoader
 
     /// <summary>Raised on the UI thread as focus checks complete: (checked so far, total).</summary>
     public event Action<int, int>? FocusProgress;
+    /// <summary>Raised once on the UI thread when every photo has its thumbnail (and capture time) loaded.</summary>
+    public event Action? ThumbnailsDone;
+    int _thumbsDone, _thumbsDoneRaised;
 
     public BackgroundLoader(IReadOnlyList<PhotoItem> items, Dispatcher dispatcher, bool checkFocus)
     {
@@ -82,12 +85,14 @@ public sealed class BackgroundLoader
         for (int i = 0; i < items.Count; i++)
         {
             _thumbTaken[i] = items[i].Thumbnail is not null || items[i].Error is not null;
+            if (_thumbTaken[i]) _thumbsDone++;
             if (items[i].FocusChecked) { _focusTaken[i] = true; _focusDone++; }
         }
     }
 
     public void Start()
     {
+        if (_thumbsDone == _items.Count) _dispatcher.InvokeAsync(RaiseThumbnailsDone, DispatcherPriority.Background);
         int workers = Math.Clamp(Environment.ProcessorCount / 2, 2, 4);
         for (int i = 0; i < workers; i++)
             Task.Factory.StartNew(Work, TaskCreationOptions.LongRunning);
@@ -99,6 +104,12 @@ public sealed class BackgroundLoader
     }
 
     public void Cancel() => _cts.Cancel();
+
+    void RaiseThumbnailsDone()
+    {
+        if (_cts.IsCancellationRequested || Interlocked.Exchange(ref _thumbsDoneRaised, 1) == 1) return;
+        ThumbnailsDone?.Invoke();
+    }
 
     static int NearestFree(bool[] taken, int focus)
     {
@@ -140,6 +151,7 @@ public sealed class BackgroundLoader
                     item.Thumbnail = loaded?.Bitmap;
                     if (loaded is not null) item.Exif ??= loaded.Exif;
                     item.Error = loaded is null ? ImageDecoder.MissingCodecHint(item.Files) ?? "No preview found in this file" : null;
+                    if (++_thumbsDone == _items.Count) RaiseThumbnailsDone();
                 }, DispatcherPriority.Background);
             }
             else
@@ -216,6 +228,8 @@ public sealed class AppSettings
     public bool SortByCaptureTime { get; set; }
     /// <summary>The last Convert settings, so the dialog opens the way it was used (except the destination).</summary>
     public ConvertOptions? LastConvert { get; set; }
+    /// <summary>Frames up to this many seconds apart can form a burst.</summary>
+    public double BurstGapSeconds { get; set; } = BurstDetector.DefaultGapSeconds;
 
     public static AppSettings Load()
     {

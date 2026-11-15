@@ -32,6 +32,8 @@ public static class ExifWriter
         if (exif.FNumber is double f && f > 0) exifIfd.Add(new Field(0x829D, RationalType, 1, Rational(f, 10)));
         if (exif.Iso is int iso && iso > 0) exifIfd.Add(new Field(0x8827, Short, 1, U16((ushort)Math.Min(iso, ushort.MaxValue))));
         AddAscii(exifIfd, 0x9003, FormatDate(exif.DateTaken));
+        if (exif.DateTaken is not null && exif.SubSecond is double sub)
+            AddAscii(exifIfd, 0x9291, ((int)Math.Round(Math.Clamp(sub, 0, 0.999) * 1000)).ToString("000", CultureInfo.InvariantCulture));
         if (exif.FocalLength is double fl && fl > 0) exifIfd.Add(new Field(0x920A, RationalType, 1, Rational(fl, 10)));
         AddAscii(exifIfd, 0xA434, exif.LensModel);
 

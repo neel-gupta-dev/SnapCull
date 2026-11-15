@@ -14,10 +14,40 @@ using SnapCull.Core;
 
 if (args.Length == 0 || !Directory.Exists(args[0]))
 {
-    Console.WriteLine("Usage: SnapCull.Probe <folder> [--focus]");
+    Console.WriteLine("""
+        Usage: SnapCull.Probe <folder> [option]
+          (no option)                    check previews and camera info of every photo
+          --focus                        also print sharpness scores
+          --sheet <out.png>              contact sheet of every photo as the app shows it
+          --ifd <file pattern>           list the image directories inside TIFF-based RAW files
+          --convert <format> <out>       convert every photo (jpeg, png, tiff, webp, heic) [--long-edge N] [--raw auto|preview|render] [--16bit]
+          --bursts [gap]                 find and rank bursts
+          --scene-diffs                  fingerprint differences, for calibrating burst grouping
+          --make-burst <photo> <other>   write a test burst into the (existing) folder
+        """);
     return 2;
 }
 bool focus = args.Contains("--focus");
+
+// --make-burst <source-photo> <other-scene-photo>: write a test burst into <folder>.   --bursts [gap]: detect and rank bursts in <folder>.
+if (args.Contains("--make-burst"))
+{
+    int at = Array.IndexOf(args, "--make-burst");
+    BurstTools.MakeBurst(args[at + 1], args[at + 2], args[0]);
+    return 0;
+}
+if (args.Contains("--scene-diffs"))
+{
+    BurstTools.SceneDiffs(args[0]);
+    return 0;
+}
+if (args.Contains("--bursts"))
+{
+    int at = Array.IndexOf(args, "--bursts");
+    double gap = args.Length > at + 1 && double.TryParse(args[at + 1], System.Globalization.CultureInfo.InvariantCulture, out var g) ? g : BurstDetector.DefaultGapSeconds;
+    BurstTools.Analyse(args[0], gap);
+    return 0;
+}
 
 // --convert <jpeg|png|tiff|webp|heic> <out-folder> [--long-edge N] [--raw auto|preview|render]: convert every photo with the app's converter.
 if (args.Contains("--convert"))

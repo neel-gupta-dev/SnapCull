@@ -141,6 +141,7 @@ internal sealed class TiffParser
                 case 0x8832: if (_recommendedExposureIndex == 0) _recommendedExposureIndex = (int)FirstUInt(v); break;
                 case 0x9003: Exif.DateTaken ??= ParseDate(Ascii(v)); break;
                 case 0x920A: Exif.FocalLength ??= Rational(v); break;
+                case 0x9291: Exif.SubSecond ??= ParseSubSecond(Ascii(v)); break;
                 case 0xA434: Exif.LensModel ??= Ascii(v); break;
                 default:
                     // Some formats store a whole JPEG as a byte blob (e.g. Panasonic RW2's JpgFromRaw, tag 0x2E).
@@ -286,6 +287,14 @@ internal sealed class TiffParser
         s is not null && DateTime.TryParseExact(s, "yyyy:MM:dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
             ? d
             : null;
+
+    // "45" means 0.45 s, "045" means 0.045 s.
+    static double? ParseSubSecond(string? s)
+    {
+        s = s?.Trim();
+        if (string.IsNullOrEmpty(s) || s.Length > 9 || !s.All(char.IsAsciiDigit)) return null;
+        return int.Parse(s, CultureInfo.InvariantCulture) / Math.Pow(10, s.Length);
+    }
 
     bool StartsWithJpegMarker(long valueOffset) =>
         Io.Read(Stream, Base + valueOffset, 2) is [0xFF, 0xD8];

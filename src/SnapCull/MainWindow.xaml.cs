@@ -15,7 +15,7 @@ public sealed record Shortcut(string Keys, string Action);
 
 public partial class MainWindow : Window
 {
-    enum ViewFilter { All, Picks, Unflagged, Rejects, Stars1, Stars2, Stars3, Stars4, Stars5, Blurry, Sharp }
+    enum ViewFilter { All, Picks, Unflagged, Rejects, Stars1, Stars2, Stars3, Stars4, Stars5, Blurry, Sharp, Bursts, BurstBest, CollapseBursts }
 
     static readonly (ViewFilter Filter, string Label)[] Filters =
     [
@@ -30,6 +30,9 @@ public partial class MainWindow : Window
         (ViewFilter.Stars5, "★★★★★"),
         (ViewFilter.Blurry, "Blurry or soft"),
         (ViewFilter.Sharp, "Sharp"),
+        (ViewFilter.Bursts, "Bursts only"),
+        (ViewFilter.BurstBest, "Best of each burst"),
+        (ViewFilter.CollapseBursts, "Collapse bursts (best only)"),
     ];
 
     static readonly Shortcut[] Shortcuts =
@@ -44,8 +47,13 @@ public partial class MainWindow : Window
         new("6 7 8 9", "Red / yellow / green / blue label"),
         new("Shift + key", "Rate, doing the opposite of auto-advance"),
         new("A", "Turn auto-advance on / off"),
-        new("Z or click", "Zoom to 100% at that spot (drag to pan)"),
+        new("Z or click", "Fit ↔ 100% at that spot (drag to pan)"),
+        new("+  −", "Zoom in / out, up to 800%"),
+        new("Ctrl + wheel", "Zoom at the pointer (or pinch on a touchpad)"),
+        new("Ctrl + 0 / 1", "Fit to window / 100%"),
         new("C", "Compare two photos side by side"),
+        new("B", "Burst review: all frames of this burst, best first"),
+        new("K", "Burst: keep the best frame, reject the rest"),
         new("Tab", "Compare: switch side · otherwise filmstrip on/off"),
         new("H", "Histogram and clipping"),
         new("I", "Camera info and focus score"),
@@ -63,7 +71,10 @@ public partial class MainWindow : Window
     readonly AppSettings _settings = AppSettings.Load();
     readonly ImageCache _cache = new(capacity: 8);
     readonly SidecarWriter _writer = new();
-    readonly Stack<(PhotoItem Item, CullState Before)> _undo = new();
+    /// <summary>Each entry is one action, which may have changed several photos (e.g. "keep best, reject the rest").</summary>
+    readonly Stack<List<(PhotoItem Item, CullState Before)>> _undo = new();
+    List<BurstGroup> _bursts = [];
+    CancellationTokenSource? _burstCts;
 
     ObservableCollection<PhotoItem> _items = [];
     ListCollectionView _view;
@@ -92,6 +103,10 @@ public partial class MainWindow : Window
             viewer.Cache = _cache;
             viewer.ClickedAt += Viewer_ClickedAt;
             viewer.Panned += Viewer_Panned;
+            viewer.ZoomChanged += async (s, zoom) =>
+            {
+                if (_compare) await (ReferenceEquals(s, ViewerA) ? ViewerB : ViewerA).FollowZoomAsync(zoom.Level, zoom.Center);
+            };
             viewer.Activated += (s, _) => { if (_compare) SetActive((PhotoViewer)s!); };
             viewer.ConvertRequested += (s, _) =>
             {
@@ -255,6 +270,9 @@ public partial class MainWindow : Window
     {
         _loader?.Cancel();
         _cache.Clear();
+        CloseBurstReview();
+        _burstCts?.Cancel();
+        _bursts = [];
 
         _items = new ObservableCollection<PhotoItem>(photos);
         _view = CreateView(_items);
@@ -266,6 +284,7 @@ public partial class MainWindow : Window
 
         _loader = new BackgroundLoader(photos, Dispatcher, _settings.CheckFocus);
         _loader.FocusProgress += Loader_FocusProgress;
+        _loader.ThumbnailsDone += () => _ = DetectBurstsAsync();
         _loader.Start();
         ExportButton.IsEnabled = ConvertButton.IsEnabled = photos.Count > 0;
         UpdateCounts();
@@ -289,6 +308,105 @@ public partial class MainWindow : Window
 
     ListCollectionView CreateView(ObservableCollection<PhotoItem> items) =>
         new(items) { Filter = o => Matches((PhotoItem)o) };
+
+    // ───────────────────────────── Bursts ─────────────────────────────
+
+    bool BurstFilterActive => _filter is ViewFilter.Bursts or ViewFilter.BurstBest or ViewFilter.CollapseBursts;
+
+    /// <summary>Groups the folder's photos into bursts (once thumbnails and capture times are loaded), then ranks them in the background.</summary>
+    async Task DetectBurstsAsync()
+    {
+        _burstCts?.Cancel();
+        var cts = _burstCts = new CancellationTokenSource();
+        var items = _items.ToList();
+        var bursts = await BurstService.DetectAsync(items, _settings.BurstGapSeconds);
+        if (cts.IsCancellationRequested) return; // a different folder or sort order was loaded meanwhile
+
+        _bursts = bursts;
+        UpdateCounts();
+        if (BurstFilterActive) Refresh(select: Current, fallbackIndex: 0);
+        if (bursts.Count > 0)
+            SetStatus($"Found {bursts.Count} burst{(bursts.Count == 1 ? "" : "s")} ({bursts.Sum(b => b.Frames.Count)} frames). " +
+                      "Finding the best frame of each… Press B on a burst to compare its frames.");
+
+        int done = 0;
+        _ = BurstService.RankAllAsync(bursts, () => Current?.Burst, Dispatcher, burst =>
+        {
+            if (cts.IsCancellationRequested) return;
+            done++;
+            if (BurstPanel.Visibility == Visibility.Visible && ReferenceEquals(BurstPanel.Burst, burst))
+                BurstPanel.Refresh(_settings.BurstGapSeconds);
+            if (BurstFilterActive) Refresh(select: Current, fallbackIndex: Math.Max(0, CurrentIndex));
+            if (done == bursts.Count)
+                SetStatus($"Best frames found for {bursts.Count} burst{(bursts.Count == 1 ? "" : "s")}. " +
+                          "Press B to review a burst, or K to keep its best frame and reject the rest.");
+        }, cts.Token);
+    }
+
+    void ToggleBurstReview()
+    {
+        if (BurstPanel.Visibility == Visibility.Visible) { CloseBurstReview(); return; }
+        if (Current?.Burst is not { } burst)
+        {
+            SetStatus(_bursts.Count == 0
+                ? "No bursts found in this folder yet. (Bursts are frames from one camera less than " +
+                  $"{_settings.BurstGapSeconds:0.#} s apart.)"
+                : "This photo isn't part of a burst. Choose “Bursts only” next to Show to see them.");
+            return;
+        }
+        ExitZoom();
+        BurstPanel.Visibility = Visibility.Visible;
+        BurstPanel.Show(burst, _settings.BurstGapSeconds, Current);
+    }
+
+    void CloseBurstReview()
+    {
+        if (BurstPanel.Visibility != Visibility.Visible) return;
+        BurstPanel.Visibility = Visibility.Collapsed;
+        BurstPanel.Stop();
+    }
+
+    /// <summary>Picks the best frame of the current burst and rejects the others, as one undoable step.</summary>
+    void KeepBestRejectRest()
+    {
+        var burst = BurstPanel.Visibility == Visibility.Visible ? BurstPanel.Burst : Current?.Burst;
+        if (burst is null) { SetStatus("This photo isn't part of a burst."); return; }
+        if (burst.Best is not { } best) { SetStatus("Still finding the best frame of this burst. Try again in a moment."); return; }
+
+        Record(burst.Frames.Select(f => (f, ReferenceEquals(f, best) ? WithFlag(f.State, CullFlag.Pick) : WithFlag(f.State, CullFlag.Reject))).ToList());
+        CloseBurstReview();
+        Refresh(select: best, fallbackIndex: Math.Max(0, CurrentIndex));
+        SetStatus($"Kept {best.FileName} and rejected the other {burst.Frames.Count - 1} frames of this burst.   Ctrl+Z undoes it.");
+    }
+
+    void BurstPanel_OpenRequested(PhotoItem item)
+    {
+        CloseBurstReview();
+        if (!Matches(item))
+        {
+            // Make sure the chosen frame is visible, whatever the filter.
+            FilterCombo.SelectedIndex = 0;
+        }
+        Refresh(select: item, fallbackIndex: 0);
+    }
+
+    async void BurstPanel_GapChanged(double gap)
+    {
+        _settings.BurstGapSeconds = gap;
+        _settings.Save();
+        var keep = BurstPanel.SelectedItem ?? Current;
+        CloseBurstReview();
+        await DetectBurstsAsync();
+        if (keep?.Burst is { } burst)
+        {
+            BurstPanel.Visibility = Visibility.Visible;
+            BurstPanel.Show(burst, gap, keep);
+        }
+        else
+        {
+            SetStatus($"With frames up to {gap:0.#} s apart, this photo isn't part of a burst.");
+        }
+    }
 
     async void SortCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -427,7 +545,8 @@ public partial class MainWindow : Window
         }
         CountsText.Text = _items.Count == 0 ? "" :
             $"{_items.Count} photos   ·   {picks} picked   ·   {rejects} rejected   ·   {rated} rated" +
-            (soft > 0 ? $"   ·   {soft} blurry or soft" : "");
+            (soft > 0 ? $"   ·   {soft} blurry or soft" : "") +
+            (_bursts.Count > 0 ? $"   ·   {_bursts.Count} burst{(_bursts.Count == 1 ? "" : "s")}" : "");
     }
 
     void SetStatus(string text) => StatusText.Text = text;
@@ -446,26 +565,61 @@ public partial class MainWindow : Window
         ViewFilter.Stars5 => p.Stars >= 5,
         ViewFilter.Blurry => p.IsSoft,
         ViewFilter.Sharp => p.FocusVerdict == FocusVerdict.Sharp,
+        ViewFilter.Bursts => p.InBurst,
+        ViewFilter.BurstBest => p.IsBurstBest,
+        // Single shots plus one frame per burst: the best, or the first until the burst is ranked.
+        ViewFilter.CollapseBursts => p.Burst is not { } b || p.IsBurstBest || (!b.IsRanked && ReferenceEquals(b.Frames[0], p)),
         _ => true,
     };
 
     // XMP stores "rejected" as rating -1, so a photo can't be rejected and starred at the same time.
-    void SetStars(int stars) => ApplyChange(s => s with
+    static CullState WithStars(CullState s, int stars) => s with
     {
         Stars = stars,
         Flag = s.Flag == CullFlag.Reject && stars > 0 ? CullFlag.None : s.Flag,
-    });
+    };
 
-    void SetFlag(CullFlag flag) => ApplyChange(s => s with
+    static CullState WithFlag(CullState s, CullFlag flag) => s with
     {
         Flag = flag,
         Stars = flag == CullFlag.Reject ? 0 : s.Stars,
-    });
+    };
 
-    void ToggleLabel(ColorLabel label) => ApplyChange(s => s with
+    void SetStars(int stars) => Change(s => WithStars(s, stars));
+    void SetFlag(CullFlag flag) => Change(s => WithFlag(s, flag));
+    void ToggleLabel(ColorLabel label) => Change(s => s with { Label = s.Label == label ? ColorLabel.None : label });
+
+    /// <summary>Rates the photo on screen, or the highlighted frame when burst review is open.</summary>
+    void Change(Func<CullState, CullState> change)
     {
-        Label = s.Label == label ? ColorLabel.None : label,
-    });
+        if (BurstPanel.Visibility == Visibility.Visible)
+        {
+            if (BurstPanel.SelectedItem is { } frame && !_busy)
+            {
+                Record([(frame, change(frame.State))]);
+                Refresh(select: Current, fallbackIndex: Math.Max(0, CurrentIndex));
+            }
+            return;
+        }
+        ApplyChange(change);
+    }
+
+    /// <summary>Applies new ratings to several photos as one undoable action, and saves them.</summary>
+    void Record(IReadOnlyList<(PhotoItem Item, CullState After)> changes)
+    {
+        var undo = new List<(PhotoItem, CullState)>();
+        foreach (var (item, after) in changes)
+        {
+            var before = item.State;
+            if (after == before) continue;
+            undo.Add((item, before));
+            item.State = after;
+            _writer.Enqueue(item.Files.SidecarPath, after);
+        }
+        if (undo.Count == 0) return;
+        _undo.Push(undo);
+        UpdateCounts();
+    }
 
     void ApplyChange(Func<CullState, CullState> change)
     {
@@ -473,15 +627,7 @@ public partial class MainWindow : Window
         if (item is null || _busy) return;
         int index = CurrentIndex;
 
-        var before = item.State;
-        var after = change(before);
-        if (after != before)
-        {
-            _undo.Push((item, before));
-            item.State = after;
-            _writer.Enqueue(item.Files.SidecarPath, after);
-            UpdateCounts();
-        }
+        Record([(item, change(item.State))]);
 
         if (!Matches(item))
         {
@@ -497,14 +643,19 @@ public partial class MainWindow : Window
     void Undo()
     {
         if (_undo.Count == 0) { SetStatus("Nothing to undo"); return; }
-        var (item, before) = _undo.Pop();
-        if (!_items.Contains(item)) return;
+        var changes = _undo.Pop().Where(c => _items.Contains(c.Item)).ToList();
+        if (changes.Count == 0) return;
 
-        item.State = before;
-        _writer.Enqueue(item.Files.SidecarPath, before);
+        foreach (var (item, before) in changes)
+        {
+            item.State = before;
+            _writer.Enqueue(item.Files.SidecarPath, before);
+        }
         UpdateCounts();
-        Refresh(select: item, fallbackIndex: Math.Max(0, CurrentIndex));
-        SetStatus($"Undid the last change to {item.FileName}");
+        var first = changes[0].Item;
+        if (BurstPanel.Visibility == Visibility.Visible) Refresh(select: Current, fallbackIndex: Math.Max(0, CurrentIndex));
+        else Refresh(select: first, fallbackIndex: Math.Max(0, CurrentIndex));
+        SetStatus(changes.Count == 1 ? $"Undid the last change to {first.FileName}" : $"Undid the last change to {changes.Count} photos");
     }
 
     /// <summary>Re-applies the filter, then shows <paramref name="select"/> if it's visible, otherwise the photo at <paramref name="fallbackIndex"/>.</summary>
@@ -633,7 +784,8 @@ public partial class MainWindow : Window
 
     void ViewerHost_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (_active.IsZoomed || Current is null) return; // when zoomed, the wheel scrolls the photo
+        // Ctrl + wheel (or a touchpad pinch) zooms, handled by the viewer; when zoomed, the wheel scrolls the photo.
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 || _active.IsZoomed || Current is null) return;
         e.Handled = true;
         _wheelDelta += e.Delta;
         if (_wheelDelta >= 120) { _wheelDelta = 0; Previous(); }
@@ -665,6 +817,34 @@ public partial class MainWindow : Window
                 case Key.E when (Keyboard.Modifiers & ModifierKeys.Shift) != 0: ShowConvert(startWithCurrent: false); break;
                 case Key.E: ShowExport(); break;
                 case Key.Z: Undo(); break;
+                case Key.OemPlus or Key.Add: _ = _active.ZoomStepAsync(+1); break;
+                case Key.OemMinus or Key.Subtract: _ = _active.ZoomStepAsync(-1); break;
+                case Key.D0 or Key.NumPad0: ExitZoom(); break;
+                case Key.D1 or Key.NumPad1: _ = ZoomAsync(new Point(0.5, 0.5)); break;
+                default: handled = false; break;
+            }
+            e.Handled = handled;
+            return;
+        }
+
+        // Burst review: arrows move between frames; rating keys apply to the highlighted frame.
+        if (BurstPanel.Visibility == Visibility.Visible)
+        {
+            switch (key)
+            {
+                case Key.Left: BurstPanel.MoveSelection(-1, 0); break;
+                case Key.Right: BurstPanel.MoveSelection(1, 0); break;
+                case Key.Up: BurstPanel.MoveSelection(0, -1); break;
+                case Key.Down: BurstPanel.MoveSelection(0, 1); break;
+                case Key.Enter: if (BurstPanel.SelectedItem is { } frame) BurstPanel_OpenRequested(frame); break;
+                case Key.Escape or Key.B: CloseBurstReview(); break;
+                case Key.K: KeepBestRejectRest(); break;
+                case Key.P: SetFlag(CullFlag.Pick); break;
+                case Key.X: SetFlag(CullFlag.Reject); break;
+                case Key.U: SetFlag(CullFlag.None); break;
+                case >= Key.D0 and <= Key.D5: SetStars(key - Key.D0); break;
+                case >= Key.NumPad0 and <= Key.NumPad5: SetStars(key - Key.NumPad0); break;
+                case Key.F1 or Key.OemQuestion: HelpOverlay.Visibility = Visibility.Visible; break;
                 default: handled = false; break;
             }
             e.Handled = handled;
@@ -690,8 +870,12 @@ public partial class MainWindow : Window
             case Key.X: SetFlag(CullFlag.Reject); break;
             case Key.U: SetFlag(CullFlag.None); break;
             case Key.A: ToggleAutoAdvance(); break;
+            case Key.B: ToggleBurstReview(); break;
+            case Key.K: KeepBestRejectRest(); break;
 
             case Key.Z or Key.Space: ToggleZoom(); break;
+            case Key.OemPlus or Key.Add: _ = _active.ZoomStepAsync(+1); break;
+            case Key.OemMinus or Key.Subtract: _ = _active.ZoomStepAsync(-1); break;
             case Key.C: ToggleCompare(); break;
             case Key.H: ToggleHistogram(); break;
             case Key.I:

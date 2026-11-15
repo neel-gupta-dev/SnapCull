@@ -9,6 +9,12 @@ public sealed class ExifData
     public string? Model { get; set; }
     public string? LensModel { get; set; }
     public DateTime? DateTaken { get; set; }
+    /// <summary>Fraction of a second (0–1) when the camera recorded it (EXIF SubSecTimeOriginal); tells burst frames apart.</summary>
+    public double? SubSecond { get; set; }
+    /// <summary>Capture time including the fraction of a second, when known.</summary>
+    public DateTime? PreciseTime => DateTaken?.AddSeconds(SubSecond ?? 0);
+    /// <summary>The camera, for telling apart photos from two bodies shot at the same moment.</summary>
+    public string CameraKey => $"{Make}|{Model}";
     /// <summary>Exposure time in seconds.</summary>
     public double? ExposureTime { get; set; }
     public double? FNumber { get; set; }
@@ -86,6 +92,7 @@ public sealed class ExifData
         Model ??= other.Model;
         LensModel ??= other.LensModel;
         DateTaken ??= other.DateTaken;
+        SubSecond ??= other.SubSecond;
         ExposureTime ??= other.ExposureTime;
         FNumber ??= other.FNumber;
         Iso ??= other.Iso;

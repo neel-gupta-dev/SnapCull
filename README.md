@@ -25,7 +25,12 @@ Every RAW file has a full-size JPEG preview hidden inside it, put there by the c
 - **Auto-advance:** rate a photo and the next one appears. Hold Shift to do the opposite.
 - **Focus check:** every photo gets a sharpness score in the background. Soft and blurry shots get an orange **SOFT** or red **BLUR** badge, and the *Blurry or soft* filter shows them all at once so you can reject them quickly.
 - **Compare mode (C):** two photos side by side. Zoom to 100% and both sides zoom to the same spot; pan one and the other follows, so you can see which frame is sharper.
-- **100% zoom:** click where you want to look, then drag to pan.
+- **Best of burst:** frames shot in quick succession are grouped automatically, using capture times to the hundredth of a second and a colour fingerprint of each frame. SnapCull then picks the **sharpest frame of each burst (★ BEST)**. It compares every frame at about 2000 px **where the subject is** (the area that's sharpest in any frame), so it catches missed focus, motion blur and camera shake, with a small penalty for blown highlights. Each frame gets a rank and a reason, such as *"#3 · a little softer than the best"*.
+  - **B** opens **burst review**: every frame side by side, best first, each as a **100% crop of the same spot on the subject**.
+  - **K** keeps the best frame and rejects the rest in one go (**Ctrl+Z** undoes it).
+  - Filters: *Bursts only*, *Best of each burst*, and *Collapse bursts* (single shots plus each burst's best).
+  - The gap between frames (default 1 s) can be changed in burst review.
+- **Zoom properly:** click or **Z** for fit ↔ 100% at that spot, **+ / −** for steps from fit up to 800%, **Ctrl + mouse wheel** (or a touchpad pinch) to zoom around the pointer, **Ctrl+0 / Ctrl+1** for fit / 100%. Drag to pan. Above 200% pixels are shown crisp, for checking focus.
 - **Histogram (H)** with the percentage of clipped highlights and shadows.
 - **Camera info overlay:** body, lens, focal length, aperture, shutter speed, ISO, date and focus score.
 - **Sort by capture time**, so a shoot from two cameras stays in the order it happened.
@@ -53,8 +58,12 @@ Every RAW file has a full-size JPEG preview hidden inside it, put there by the c
 | 6 7 8 9 | Red / yellow / green / blue label |
 | Shift + rating key | Rate, doing the opposite of auto-advance |
 | A | Auto-advance on/off |
-| Z, Space or click | Zoom to 100% |
+| Z, Space or click | Fit ↔ 100% |
+| + / −, Ctrl + wheel | Zoom in / out (up to 800%) |
+| Ctrl+0 / Ctrl+1 | Fit to window / 100% |
 | C | Compare mode |
+| B | Burst review (all frames of a burst, best first) |
+| K | Keep the burst's best frame, reject the rest |
 | Tab | Compare mode: switch sides. Otherwise: filmstrip on/off |
 | H | Histogram |
 | I | Camera info and focus score |
@@ -184,7 +193,7 @@ The most interesting file is [`PreviewExtractor.cs`](src/SnapCull.Core/PreviewEx
 - [x] Compare two shots side by side
 - [x] Convert to JPEG, PNG, TIFF, WebP and HEIC
 - [ ] Detect closed eyes
-- [ ] Group burst shots and pick the sharpest automatically
+- [x] Group burst shots and pick the sharpest automatically
 - [ ] Ingest from memory card, with verified backup to two drives
 - [ ] Optional darktable-style sidecar names (`IMG_0001.CR3.xmp`)
 

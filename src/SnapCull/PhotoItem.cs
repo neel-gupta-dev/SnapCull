@@ -18,6 +18,10 @@ public sealed class PhotoItem(PhotoFiles files) : INotifyPropertyChanged
     static readonly Brush BlueBrush = Frozen(0x4F, 0xA3, 0xFF);
     static readonly Brush PurpleBrush = Frozen(0xA8, 0x6B, 0xF2);
     static readonly Brush SoftBrush = Frozen(0xE0, 0x8A, 0x2E);
+    static readonly Brush BestBrush = Frozen(0xC9, 0x9A, 0x16);
+    static readonly Brush BurstBrush = Frozen(0x3A, 0x5F, 0x9E);
+    static readonly Brush BurstBarBlue = Frozen(0x5B, 0x8F, 0xE0);
+    static readonly Brush BurstBarTeal = Frozen(0x3F, 0xC1, 0xA8);
 
     int _stars;
     CullFlag _flag;
@@ -91,7 +95,7 @@ public sealed class PhotoItem(PhotoFiles files) : INotifyPropertyChanged
         }
     }
 
-    public bool HasInfo => (_exif is not null && (CameraLine ?? SettingsLine ?? DateLine) is not null) || FocusLine is not null;
+    public bool HasInfo => (_exif is not null && (CameraLine ?? SettingsLine ?? DateLine) is not null) || FocusLine is not null || _burst is not null;
     public string? CameraLine => _exif?.CameraText;
     public string? LensLine => _exif?.LensModel;
     public string? SettingsLine => _exif?.SettingsText;
@@ -121,6 +125,49 @@ public sealed class PhotoItem(PhotoFiles files) : INotifyPropertyChanged
         ? $"Focus {s:0}/100 · {FocusVerdict switch { Core.FocusVerdict.Sharp => "looks sharp", Core.FocusVerdict.Soft => "a little soft", _ => "probably blurry" }}"
         : null;
     public string FocusBadgeText => FocusVerdict switch { Core.FocusVerdict.Blurry => "BLUR", Core.FocusVerdict.Soft => "SOFT", _ => "" };
+
+    // ── Bursts ──
+
+    BurstGroup? _burst;
+    FrameRank? _burstRank;
+
+    /// <summary>The burst this photo belongs to, if any.</summary>
+    public BurstGroup? Burst
+    {
+        get => _burst;
+        set
+        {
+            if (!Set(ref _burst, value)) return;
+            _burstRank = null;
+            BurstChanged();
+        }
+    }
+
+    /// <summary>How this frame ranks within its burst, once analysed.</summary>
+    public FrameRank? BurstRank
+    {
+        get => _burstRank;
+        set { _burstRank = value; BurstChanged(); }
+    }
+
+    public bool InBurst => _burst is not null;
+    public bool IsBurstBest => _burstRank?.Rank == 1;
+    /// <summary>Filmstrip chip: "★ BEST", "#3" or "BURST" (not yet ranked).</summary>
+    public string BurstBadgeText => _burst is null ? "" : _burstRank is null ? "BURST" : _burstRank.Rank == 1 ? "★ BEST" : $"#{_burstRank.Rank}";
+    public Brush? BurstBadgeBrush => _burst is null ? null : IsBurstBest ? BestBrush : BurstBrush;
+    /// <summary>The filmstrip bar under burst frames; neighbouring bursts alternate colours so their edges show.</summary>
+    public Brush? BurstBarBrush => _burst is null ? null : _burst.Number % 2 == 1 ? BurstBarBlue : BurstBarTeal;
+    /// <summary>Info line, for example "Burst of 14 · #3 · a little softer than the best".</summary>
+    public string? BurstLine => _burst is null ? null : _burstRank is null
+        ? $"Burst of {_burst.Frames.Count} · finding the best frame…"
+        : $"Burst of {_burst.Frames.Count} · #{_burstRank.Rank} · {_burstRank.Note}";
+
+    void BurstChanged()
+    {
+        Changed(nameof(BurstRank)); Changed(nameof(InBurst)); Changed(nameof(IsBurstBest));
+        Changed(nameof(BurstBadgeText)); Changed(nameof(BurstBadgeBrush)); Changed(nameof(BurstBarBrush));
+        Changed(nameof(BurstLine)); Changed(nameof(HasInfo));
+    }
     public Brush? FocusBadgeBrush => FocusVerdict switch { Core.FocusVerdict.Blurry => RejectBrush, Core.FocusVerdict.Soft => SoftBrush, _ => null };
 
     public string? Error

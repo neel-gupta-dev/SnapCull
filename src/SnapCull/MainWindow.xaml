@@ -48,6 +48,14 @@
                    Visibility="{Binding Error, Converter={StaticResource VisibleIf}}" ToolTip="{Binding Error}" />
         <Rectangle Height="4" VerticalAlignment="Top" RadiusX="2" RadiusY="2" Fill="{Binding LabelBrush}"
                    Visibility="{Binding HasLabel, Converter={StaticResource VisibleIf}}" />
+        <!-- Burst: a bar joining the frames of one burst, and a chip with the frame's rank -->
+        <Rectangle Height="3" VerticalAlignment="Bottom" RadiusX="1.5" RadiusY="1.5" Fill="{Binding BurstBarBrush}"
+                   Visibility="{Binding InBurst, Converter={StaticResource VisibleIf}}" />
+        <Border Margin="5,7,0,0" Padding="4,0" CornerRadius="3" HorizontalAlignment="Left" VerticalAlignment="Top"
+                Background="{Binding BurstBadgeBrush}" ToolTip="{Binding BurstLine}"
+                Visibility="{Binding InBurst, Converter={StaticResource VisibleIf}}">
+          <TextBlock Text="{Binding BurstBadgeText}" Foreground="White" FontSize="9" FontWeight="Bold" />
+        </Border>
         <Border Width="18" Height="18" CornerRadius="9" Margin="0,7,5,0" HorizontalAlignment="Right" VerticalAlignment="Top"
                 Background="{Binding FlagBrush}" Visibility="{Binding FlagText, Converter={StaticResource VisibleIf}}">
           <TextBlock Text="{Binding FlagGlyph}" Foreground="White" FontSize="11" FontWeight="Bold"
@@ -126,6 +134,11 @@
           <Button x:Name="ReopenButton" Padding="18,8" Margin="10,0,0,0" Focusable="False" Click="ReopenButton_Click" Visibility="Collapsed" />
         </StackPanel>
       </StackPanel>
+
+      <!-- All frames of a burst side by side, best first -->
+      <local:BurstReview x:Name="BurstPanel" Grid.ColumnSpan="2" Visibility="Collapsed"
+                         OpenRequested="BurstPanel_OpenRequested" CloseRequested="CloseBurstReview"
+                         KeepBestRequested="KeepBestRejectRest" GapChanged="BurstPanel_GapChanged" />
 
       <!-- Keyboard shortcuts -->
       <Border x:Name="HelpOverlay" Grid.ColumnSpan="2" Background="#E6101010" Visibility="Collapsed" MouseLeftButtonDown="HelpOverlay_MouseDown">

@@ -10,7 +10,7 @@
     <AssemblyName>SnapCull</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>SnapCull.ico</ApplicationIcon>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Product>SnapCull</Product>
     <Description>Fast photo culling for Windows</Description>
     <Authors>Neel Gupta</Authors>

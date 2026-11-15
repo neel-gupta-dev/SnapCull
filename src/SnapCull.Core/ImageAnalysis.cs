@@ -32,11 +32,28 @@ public static class FocusAnalyzer
     public static double? Score(ReadOnlySpan<byte> gray, int width, int height, int stride)
     {
         if (width < 64 || height < 64) return null;
-        int tileW = width / Grid, tileH = height / Grid;
-        var tiles = new List<double>(Grid * Grid);
+        var tiles = TileRatios(gray, width, height, stride, Grid).Where(r => !double.IsNaN(r)).ToList();
+        if (tiles.Count == 0) return null;
+        tiles.Sort();
+        double best = tiles.TakeLast(Math.Min(TopTiles, tiles.Count)).Average();
+        // Map the ratio (about 0.2 for heavy blur, 1–3 for crisp detail) onto 0–100 with a curve that
+        // keeps separating sharp shots from each other instead of capping them all at 100.
+        return 100 * (1 - Math.Exp(-best));
+    }
 
-        for (int ty = 0; ty < Grid; ty++)
-        for (int tx = 0; tx < Grid; tx++)
+    public static FocusVerdict Verdict(double score) =>
+        score >= SharpAbove ? FocusVerdict.Sharp : score < BlurryBelow ? FocusVerdict.Blurry : FocusVerdict.Soft;
+
+    /// <summary>
+    /// Local sharpness of each tile in a <paramref name="grid"/> × <paramref name="grid"/> split of the picture
+    /// (row by row): fine detail divided by contrast. Flat tiles (sky, walls) are NaN because they can't be judged.
+    /// </summary>
+    public static double[] TileRatios(ReadOnlySpan<byte> gray, int width, int height, int stride, int grid)
+    {
+        var result = new double[grid * grid];
+        int tileW = width / grid, tileH = height / grid;
+        for (int ty = 0; ty < grid; ty++)
+        for (int tx = 0; tx < grid; tx++)
         {
             int x0 = Math.Max(1, tx * tileW), x1 = Math.Min(width - 1, (tx + 1) * tileW);
             int y0 = Math.Max(1, ty * tileH), y1 = Math.Min(height - 1, (ty + 1) * tileH);
@@ -54,23 +71,20 @@ public static class FocusAnalyzer
                     n++;
                 }
             }
-            if (n == 0) continue;
-            double mean = sum / n, contrast = Math.Sqrt(Math.Max(0, sumSq / n - mean * mean));
-            if (contrast < MinTileContrast) continue;
-            double lapMean = lapSum / n, lapStd = Math.Sqrt(Math.Max(0, lapSq / n - lapMean * lapMean));
-            tiles.Add(lapStd / contrast);
+            double ratio = double.NaN;
+            if (n > 0)
+            {
+                double mean = sum / n, contrast = Math.Sqrt(Math.Max(0, sumSq / n - mean * mean));
+                if (contrast >= MinTileContrast)
+                {
+                    double lapMean = lapSum / n, lapStd = Math.Sqrt(Math.Max(0, lapSq / n - lapMean * lapMean));
+                    ratio = lapStd / contrast;
+                }
+            }
+            result[ty * grid + tx] = ratio;
         }
-
-        if (tiles.Count == 0) return null;
-        tiles.Sort();
-        double best = tiles.TakeLast(Math.Min(TopTiles, tiles.Count)).Average();
-        // Map the ratio (about 0.2 for heavy blur, 1–3 for crisp detail) onto 0–100 with a curve that
-        // keeps separating sharp shots from each other instead of capping them all at 100.
-        return 100 * (1 - Math.Exp(-best));
+        return result;
     }
-
-    public static FocusVerdict Verdict(double score) =>
-        score >= SharpAbove ? FocusVerdict.Sharp : score < BlurryBelow ? FocusVerdict.Blurry : FocusVerdict.Soft;
 }
 
 public enum FocusVerdict { Sharp, Soft, Blurry }

@@ -6,7 +6,8 @@
     <ScrollViewer x:Name="Scroller" Background="Transparent" Focusable="False"
                   HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled"
                   PreviewMouseLeftButtonDown="Scroller_MouseDown" PreviewMouseMove="Scroller_MouseMove"
-                  PreviewMouseLeftButtonUp="Scroller_MouseUp" PreviewMouseRightButtonDown="Scroller_RightDown">
+                  PreviewMouseLeftButtonUp="Scroller_MouseUp" PreviewMouseRightButtonDown="Scroller_RightDown"
+                  PreviewMouseWheel="Scroller_PreviewMouseWheel">
       <ScrollViewer.ContextMenu>
         <ContextMenu x:Name="PhotoMenu" Opened="PhotoMenu_Opened">
           <MenuItem Header="Show in File Explorer" Click="ShowInExplorer_Click" />
@@ -36,9 +37,13 @@
       </Border>
       <Ellipse Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center" Fill="{Binding LabelBrush}" Stroke="#60000000"
                Visibility="{Binding HasLabel, Converter={StaticResource VisibleIf}}" />
-      <Border CornerRadius="4" Padding="8,3" Background="{Binding FocusBadgeBrush}" ToolTip="{Binding FocusLine}"
+      <Border CornerRadius="4" Padding="8,3" Margin="0,0,8,0" Background="{Binding FocusBadgeBrush}" ToolTip="{Binding FocusLine}"
               Visibility="{Binding FocusBadgeText, Converter={StaticResource VisibleIf}}">
         <TextBlock Text="{Binding FocusBadgeText}" FontWeight="Bold" Foreground="White" />
+      </Border>
+      <Border CornerRadius="4" Padding="8,3" Background="{Binding BurstBadgeBrush}" ToolTip="{Binding BurstLine}"
+              Visibility="{Binding InBurst, Converter={StaticResource VisibleIf}}">
+        <TextBlock Text="{Binding BurstBadgeText}" FontWeight="Bold" Foreground="White" />
       </Border>
     </StackPanel>
 
@@ -66,6 +71,8 @@
                      Visibility="{Binding DateLine, Converter={StaticResource VisibleIf}}" />
           <TextBlock Text="{Binding FocusLine}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="0,4,0,0"
                      Visibility="{Binding FocusLine, Converter={StaticResource VisibleIf}}" />
+          <TextBlock Text="{Binding BurstLine}" Foreground="#9EC1FF" FontSize="12"
+                     Visibility="{Binding BurstLine, Converter={StaticResource VisibleIf}}" />
         </StackPanel>
       </Border>
     </Border>
@@ -88,7 +95,7 @@
 
     <Border x:Name="ZoomBadge" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="14" Padding="9,3" CornerRadius="4"
             Background="{StaticResource OverlayBrush}" IsHitTestVisible="False" Visibility="Collapsed">
-      <TextBlock Text="100%" Foreground="White" />
+      <TextBlock x:Name="ZoomText" Text="100%" Foreground="White" />
     </Border>
 
     <TextBlock x:Name="LoadingText" Text="Loading…" Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Center"

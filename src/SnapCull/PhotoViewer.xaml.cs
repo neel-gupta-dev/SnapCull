@@ -164,37 +164,132 @@ public partial class PhotoViewer : UserControl
 
     // ───────────────────────────── Zoom & pan ─────────────────────────────
 
-    /// <summary>Zooms to 100% (one image pixel per screen pixel) centred on <paramref name="at"/> (0–1 in each direction).</summary>
-    public async Task ZoomToAsync(Point at)
+    /// <summary>Zoom steps for the + and − keys, as a fraction of 100% (one photo pixel per screen pixel).</summary>
+    static readonly double[] ZoomSteps = [0.125, 0.25, 0.33, 0.5, 0.67, 1, 1.5, 2, 3, 4, 6, 8];
+    const double MaxZoom = 8;
+
+    double _zoom; // current level when zoomed; 1 = 100%
+
+    /// <summary>The zoom level (1 = 100%), or null when the whole photo is fitted to the window.</summary>
+    public double? ZoomLevel => _zoomed ? _zoom : null;
+
+    /// <summary>The user changed the zoom on this viewer: level (null = fit) and the photo point at the centre (0–1).</summary>
+    public event EventHandler<(double? Level, Point Center)>? ZoomChanged;
+
+    /// <summary>Zooms to 100% centred on <paramref name="at"/> (0–1 in each direction).</summary>
+    public Task ZoomToAsync(Point at) => SetZoomAsync(1, at, viewportAnchor: null, raise: false);
+
+    /// <summary>
+    /// Shows the photo at <paramref name="level"/> (1 = 100%), keeping photo point <paramref name="imagePoint"/> (0–1)
+    /// under <paramref name="viewportAnchor"/> (or the centre). Levels at or below "fit" go back to fitting the window.
+    /// </summary>
+    public async Task SetZoomAsync(double level, Point imagePoint, Point? viewportAnchor, bool raise)
     {
         var item = _item;
-        if (item is null || _zoomed) return;
+        if (item is null) return;
         int token = _token;
 
+        var full = await LoadFullAsync(item);
+        if (token != _token || full is null) return;
+
+        double fit = FitLevel(full);
+        if (level <= fit * 1.001)
+        {
+            ExitZoom();
+            if (raise) ZoomChanged?.Invoke(this, (null, imagePoint));
+            return;
+        }
+        level = Math.Min(level, MaxZoom);
+
+        var dpi = VisualTreeHelper.GetDpi(this);
+        MainImage.Source = full;
+        MainImage.Stretch = Stretch.Fill;
+        MainImage.Width = full.PixelWidth * level / dpi.DpiScaleX;
+        MainImage.Height = full.PixelHeight * level / dpi.DpiScaleY;
+        // Above 100%, show crisp square pixels for checking focus; below, smooth scaling.
+        RenderOptions.SetBitmapScalingMode(MainImage, level >= 2 ? BitmapScalingMode.NearestNeighbor : BitmapScalingMode.HighQuality);
+        Scroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden;
+        Scroller.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
+        Scroller.Cursor = Cursors.Hand;
+        ZoomText.Text = $"{level * 100:0}%";
+        ZoomBadge.Visibility = Visibility.Visible;
+        _zoomed = true;
+        _zoom = level;
+
+        Scroller.UpdateLayout();
+        var anchor = viewportAnchor ?? new Point(Scroller.ViewportWidth / 2, Scroller.ViewportHeight / 2);
+        Scroller.ScrollToHorizontalOffset(imagePoint.X * MainImage.ActualWidth - anchor.X);
+        Scroller.ScrollToVerticalOffset(imagePoint.Y * MainImage.ActualHeight - anchor.Y);
+        if (raise) ZoomChanged?.Invoke(this, (level, imagePoint));
+    }
+
+    /// <summary>Zooms by a factor around a point of the viewer (for Ctrl + mouse wheel and pinch).</summary>
+    public async Task ZoomByAsync(double factor, Point? viewportPoint)
+    {
+        if (_item is null) return;
+        var full = await LoadFullAsync(_item);
+        if (full is null) return;
+        double current = _zoomed ? _zoom : FitLevel(full);
+        var (imagePoint, anchor) = PointUnder(viewportPoint);
+        await SetZoomAsync(current * factor, imagePoint, anchor, raise: true);
+    }
+
+    /// <summary>Goes to the next zoom step in (+1) or out (−1), for the + and − keys.</summary>
+    public async Task ZoomStepAsync(int direction)
+    {
+        if (_item is null) return;
+        var full = await LoadFullAsync(_item);
+        if (full is null) return;
+        double fit = FitLevel(full);
+        double current = _zoomed ? _zoom : fit;
+        double next = direction > 0
+            ? ZoomSteps.Where(s => s > current * 1.01).DefaultIfEmpty(MaxZoom).First()
+            : ZoomSteps.Where(s => s < current * 0.99).DefaultIfEmpty(fit).Last();
+        if (direction < 0 && next < fit) next = fit;
+        var (imagePoint, _) = PointUnder(null);
+        await SetZoomAsync(next, imagePoint, null, raise: true);
+    }
+
+    /// <summary>Follows another viewer's zoom (compare mode).</summary>
+    public async Task FollowZoomAsync(double? level, Point center)
+    {
+        if (level is null) { ExitZoom(); return; }
+        await SetZoomAsync(level.Value, center, null, raise: false);
+    }
+
+    Task<BitmapSource?> LoadFullAsync(PhotoItem item)
+    {
         if (_full is not { } full || !ReferenceEquals(full.Item, item))
         {
             var files = item.Files;
             _full = full = (item, Task.Run(() => ImageDecoder.TryLoad(files, PreviewSize.Largest, maxLongSide: null)));
         }
+        return AwaitFull(full.Task);
+    }
 
-        if (!full.Task.IsCompleted) LoadingText.Visibility = Visibility.Visible;
-        var loaded = await full.Task;
+    async Task<BitmapSource?> AwaitFull(Task<ImageDecoder.Loaded?> task)
+    {
+        if (!task.IsCompleted) LoadingText.Visibility = Visibility.Visible;
+        var loaded = await task;
         LoadingText.Visibility = Visibility.Collapsed;
-        if (token != _token || loaded is null || _zoomed) return;
+        return loaded?.Bitmap;
+    }
 
+    /// <summary>The zoom level at which the whole photo just fits the viewer.</summary>
+    double FitLevel(BitmapSource full)
+    {
         var dpi = VisualTreeHelper.GetDpi(this);
-        MainImage.Source = loaded.Bitmap;
-        MainImage.Stretch = Stretch.Fill;
-        MainImage.Width = loaded.Bitmap.PixelWidth / dpi.DpiScaleX;
-        MainImage.Height = loaded.Bitmap.PixelHeight / dpi.DpiScaleY;
-        Scroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden;
-        Scroller.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
-        Scroller.Cursor = Cursors.Hand;
-        ZoomBadge.Visibility = Visibility.Visible;
-        _zoomed = true;
+        double w = Math.Max(1, Scroller.ActualWidth) * dpi.DpiScaleX, h = Math.Max(1, Scroller.ActualHeight) * dpi.DpiScaleY;
+        return Math.Min(1, Math.Min(w / full.PixelWidth, h / full.PixelHeight));
+    }
 
-        Scroller.UpdateLayout();
-        SetCenter(at);
+    /// <summary>Which photo point (0–1) is under a viewer point (default: the centre), and that viewer point.</summary>
+    (Point ImagePoint, Point Anchor) PointUnder(Point? viewportPoint)
+    {
+        var anchor = viewportPoint ?? new Point(Scroller.ActualWidth / 2, Scroller.ActualHeight / 2);
+        var onImage = Scroller.TranslatePoint(anchor, MainImage);
+        double w = Math.Max(1, MainImage.ActualWidth), h = Math.Max(1, MainImage.ActualHeight);
+        return (new Point(Math.Clamp(onImage.X / w, 0, 1), Math.Clamp(onImage.Y / h, 0, 1)), anchor);
     }
 
     public void ExitZoom()
@@ -205,6 +300,7 @@ public partial class PhotoViewer : UserControl
         MainImage.Stretch = Stretch.Uniform;
         MainImage.Width = double.NaN;
         MainImage.Height = double.NaN;
+        RenderOptions.SetBitmapScalingMode(MainImage, BitmapScalingMode.HighQuality);
         Scroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         Scroller.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
         Scroller.Cursor = null;
@@ -221,6 +317,15 @@ public partial class PhotoViewer : UserControl
     Point Center => new(
         Scroller.ExtentWidth > 0 ? (Scroller.HorizontalOffset + Scroller.ViewportWidth / 2) / Scroller.ExtentWidth : 0.5,
         Scroller.ExtentHeight > 0 ? (Scroller.VerticalOffset + Scroller.ViewportHeight / 2) / Scroller.ExtentHeight : 0.5);
+
+    // Ctrl + mouse wheel (and two-finger pinch on a touchpad, which Windows sends the same way) zooms at the pointer.
+    async void Scroller_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0 || _item is null) return;
+        e.Handled = true;
+        Activated?.Invoke(this, EventArgs.Empty);
+        await ZoomByAsync(Math.Pow(1.25, e.Delta / 120.0), e.GetPosition(Scroller));
+    }
 
     void Scroller_MouseDown(object sender, MouseButtonEventArgs e)
     {
