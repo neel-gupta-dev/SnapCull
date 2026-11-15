@@ -67,6 +67,8 @@
                      Visibility="{Binding LensLine, Converter={StaticResource VisibleIf}}" />
           <TextBlock Text="{Binding SettingsLine}" Foreground="#F2F2F2" Margin="0,4,0,0"
                      Visibility="{Binding SettingsLine, Converter={StaticResource VisibleIf}}" />
+          <TextBlock Text="{Binding ResolutionLine}" Foreground="#C8C8C8" FontSize="12"
+                     Visibility="{Binding ResolutionLine, Converter={StaticResource VisibleIf}}" />
           <TextBlock Text="{Binding DateLine}" Foreground="{StaticResource MutedTextBrush}" FontSize="12"
                      Visibility="{Binding DateLine, Converter={StaticResource VisibleIf}}" />
           <TextBlock Text="{Binding FocusLine}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="0,4,0,0"

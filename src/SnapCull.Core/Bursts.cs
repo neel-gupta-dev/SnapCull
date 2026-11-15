@@ -102,8 +102,11 @@ public static class BurstDetector
     }
 }
 
-/// <summary>Sharpness of one burst frame, tile by tile, plus how much of it is clipped.</summary>
-public sealed record FrameMeasure(double[] Tiles, double HighlightClipping, double ShadowClipping);
+/// <summary>
+/// Sharpness of one burst frame, tile by tile (1 / edge width, NaN where a tile has no edges), separately for
+/// vertical edges (<paramref name="Across"/>) and horizontal edges (<paramref name="Down"/>), plus how much is clipped.
+/// </summary>
+public sealed record FrameMeasure(double[] Across, double[] Down, double HighlightClipping, double ShadowClipping);
 
 /// <param name="Rank">1 = best.</param>
 /// <param name="Relative">Score compared with the best frame (best = 1).</param>
@@ -126,24 +129,37 @@ public static class BurstRanker
     /// <summary>Long side, in pixels, that burst frames are analysed at.</summary>
     public const int AnalysisLongSide = 2048;
 
-    public static FrameMeasure Measure(ReadOnlySpan<byte> gray, int width, int height, int stride, double highlightClipping, double shadowClipping) =>
-        new(FocusAnalyzer.TileRatios(gray, width, height, stride, Grid), highlightClipping, shadowClipping);
+    public static FrameMeasure Measure(ReadOnlySpan<byte> gray, int width, int height, int stride, double highlightClipping, double shadowClipping)
+    {
+        var (across, down) = FocusAnalyzer.TileWidthsByDirection(gray, width, height, stride, Grid);
+        static double[] Sharpness(double[] widths) => widths.Select(w => double.IsNaN(w) ? double.NaN : 1 / w).ToArray();
+        return new FrameMeasure(Sharpness(across), Sharpness(down), highlightClipping, shadowClipping);
+    }
+
+    /// <summary>Subject tiles in one direction: the 10% (at least 4) that reach the highest sharpness in any frame.</summary>
+    static List<(int Tile, double Max)> SubjectTiles(IReadOnlyList<double[]> perFrame)
+    {
+        int tiles = perFrame.Min(t => t.Length);
+        return Enumerable.Range(0, tiles)
+            .Select(t => (Tile: t, Max: perFrame.Max(f => double.IsNaN(f[t]) ? 0 : f[t])))
+            .Where(t => t.Max > 0)
+            .OrderByDescending(t => t.Max)
+            .Take(Math.Max(4, tiles / 10))
+            .ToList();
+    }
 
     public static BurstRanking Rank(IReadOnlyList<FrameMeasure> frames)
     {
         if (frames.Count == 0) return new BurstRanking([], 0.5, 0.5);
-        int tiles = frames.Min(f => f.Tiles.Length);
 
-        // Subject: the 10% of tiles (at least 4) that reach the highest sharpness in any frame.
-        var bestPerTile = Enumerable.Range(0, tiles)
-            .Select(t => (Tile: t, Max: frames.Max(f => double.IsNaN(f.Tiles[t]) ? 0 : f.Tiles[t])))
-            .Where(t => t.Max > 0)
-            .OrderByDescending(t => t.Max)
-            .ToList();
-        int take = Math.Max(4, tiles / 10);
-        var subject = bestPerTile.Take(take).ToList();
+        // Each direction is compared separately; a frame is only as sharp as its worse direction, so a
+        // sideways shake counts even when it leaves horizontal edges crisp. In the same scene, a tile whose
+        // edges have vanished in one frame has been smeared, so it counts as 0 there.
+        var across = SubjectTiles(frames.Select(f => f.Across).ToList());
+        var down = SubjectTiles(frames.Select(f => f.Down).ToList());
 
         double subjectX = 0.5, subjectY = 0.5;
+        var subject = across.Concat(down).ToList();
         if (subject.Count > 0)
         {
             double weight = subject.Sum(s => s.Max);
@@ -151,11 +167,20 @@ public static class BurstRanker
             subjectY = subject.Sum(s => (s.Tile / Grid + 0.5) / Grid * s.Max) / weight;
         }
 
+        static double DirectionScore(double[] tiles, List<(int Tile, double Max)> subjectTiles) =>
+            subjectTiles.Average(s => double.IsNaN(tiles[s.Tile]) ? 0 : tiles[s.Tile]);
+
         double minHighlights = frames.Min(f => f.HighlightClipping);
         double minShadows = frames.Min(f => f.ShadowClipping);
         var scores = frames.Select(f =>
         {
-            double sharp = subject.Count == 0 ? 0 : subject.Average(s => double.IsNaN(f.Tiles[s.Tile]) ? 0 : f.Tiles[s.Tile]);
+            double sharp = (across.Count > 0, down.Count > 0) switch
+            {
+                (true, true) => Math.Min(DirectionScore(f.Across, across), DirectionScore(f.Down, down)),
+                (true, false) => DirectionScore(f.Across, across),
+                (false, true) => DirectionScore(f.Down, down),
+                _ => 0,
+            };
             double highlightPenalty = Math.Clamp((f.HighlightClipping - minHighlights) * 4, 0, 0.2);
             double shadowPenalty = Math.Clamp((f.ShadowClipping - minShadows) * 2, 0, 0.1);
             return (Score: sharp * (1 - highlightPenalty - shadowPenalty), Highlights: highlightPenalty, Shadows: shadowPenalty);

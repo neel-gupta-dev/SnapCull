@@ -84,7 +84,7 @@ public class BurstRankerTests
                 img[y * Size + x] = (byte)(90 + 40 * Math.Sin(x / 60.0) + 30 * Math.Cos(y / 45.0));
         for (int y = 96; y < 224; y++)
             for (int x = 96; x < 224; x++)
-                img[y * Size + x] = (byte)(((x / 3 + y / 5) % 2 == 0 ? 50 : 200) + rnd.Next(-4, 5));
+                img[y * Size + x] = (byte)(((x / 8 + y / 10) % 2 == 0 ? 50 : 200) + rnd.Next(-4, 5));
         for (int pass = 0; pass < blur; pass++)
         {
             var copy = (byte[])img.Clone();

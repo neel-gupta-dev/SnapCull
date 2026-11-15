@@ -98,6 +98,50 @@ public class ExportServiceTests
     }
 }
 
+public class ResolutionTests
+{
+    [Fact]
+    public void Resolution_is_shown_the_way_the_photo_is_viewed()
+    {
+        Assert.Equal("6000 × 4000 px · 24.0 MP", new ExifData { PixelWidth = 6000, PixelHeight = 4000 }.ResolutionText);
+        Assert.Equal("4000 × 6000 px · 24.0 MP", new ExifData { PixelWidth = 6000, PixelHeight = 4000, Orientation = 6 }.ResolutionText);
+        Assert.Null(new ExifData().ResolutionText);
+    }
+
+    [Fact]
+    public void Exif_pixel_size_wins_over_everything_else()
+    {
+        var t = new TiffBuilder();
+        uint exif = t.AddIfd([t.Long(0xA002, 3360), t.Long(0xA003, 2240)]);
+        t.SetFirstIfd(t.AddIfd([t.Long(0x0100, 6720), t.Long(0x0101, 4480), t.Long(0x8769, exif)]));
+        var parsed = TiffParser.Parse(new MemoryStream(t.ToArray()), 0)!;
+        parsed.UseLargestImageAsSize([(6720, 4480)]);
+
+        Assert.Equal((3360, 2240), (parsed.Exif.PixelWidth!.Value, parsed.Exif.PixelHeight!.Value));
+    }
+
+    [Theory]
+    [InlineData(7360, 4912, 7360, 4912)] // full-size preview nearly as big as the sensor data: the preview is the photo size
+    [InlineData(1616, 1080, 6048, 4024)] // small preview: the sensor data size is used
+    public void Raw_size_comes_from_the_sensor_data_or_a_full_size_preview(int previewW, int previewH, int expectedW, int expectedH)
+    {
+        var t = new TiffBuilder();
+        uint raw = t.AddIfd([t.Long(0x0100, previewW == 7360 ? 7392u : 6048u), t.Long(0x0101, previewW == 7360 ? 4950u : 4024u)]);
+        t.SetFirstIfd(t.AddIfd([t.Ascii(0x010F, "PENTAX"), new TiffEntry(0x014A, 4, 1, BitConverter.GetBytes(raw))]));
+        var parsed = TiffParser.Parse(new MemoryStream(t.ToArray()), 0)!;
+        parsed.UseLargestImageAsSize([(previewW, previewH)]);
+
+        Assert.Equal((expectedW, expectedH), (parsed.Exif.PixelWidth!.Value, parsed.Exif.PixelHeight!.Value));
+    }
+
+    [Fact]
+    public void Plain_jpeg_size_comes_from_its_frame_header()
+    {
+        var jpeg = Fake.Jpeg(4032, 3024);
+        Assert.Equal("4032 × 3024 px · 12.2 MP", PreviewExtractor.Extract(new MemoryStream(jpeg))!.Exif.ResolutionText);
+    }
+}
+
 public class ExifDataTests
 {
     [Theory]
@@ -124,6 +168,8 @@ public class ExifDataTests
     [InlineData("OM Digital Solutions", "OM-1", "OM-1")]
     [InlineData("OM Digital Solutions", "TG-7", "OM System TG-7")]
     [InlineData("Xiaomi", "MI 8", "Xiaomi MI 8")]
+    [InlineData("RICOH IMAGING COMPANY, LTD.", "PENTAX K-1", "PENTAX K-1")]
+    [InlineData("EASTMAN KODAK COMPANY", "KODAK P880 ZOOM DIGITAL CAMERA", "KODAK P880 ZOOM DIGITAL CAMERA")]
     public void Does_not_repeat_the_brand(string? make, string model, string expected)
     {
         Assert.Equal(expected, new ExifData { Make = make, Model = model }.CameraText);

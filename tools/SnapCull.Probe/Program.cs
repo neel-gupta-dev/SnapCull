@@ -152,26 +152,30 @@ foreach (var path in files)
     var size = viaCodec ? $"{bitmap.PixelWidth}x{bitmap.PixelHeight}W"
              : large.Width > 0 ? $"{large.Width}x{large.Height}" : $"{bitmap.PixelWidth}x{bitmap.PixelHeight}*";
     var thumbSize = thumb is null ? "-" : thumb.Width > 0 ? $"{thumb.Width}x{thumb.Height}" : "full";
-    var info = string.Join(" | ", new[] { e.CameraText, e.LensModel, e.SettingsText, e.DateTaken?.ToString("yyyy-MM-dd HH:mm"), e.Orientation != 1 ? $"orient {e.Orientation}" : null }
+    var info = string.Join(" | ", new[] { e.CameraText, e.ResolutionText, e.LensModel, e.SettingsText, e.DateTaken?.ToString("yyyy-MM-dd HH:mm"), e.Orientation != 1 ? $"orient {e.Orientation}" : null }
         .Where(s => !string.IsNullOrEmpty(s)));
     var warn = Math.Max(bitmap.PixelWidth, bitmap.PixelHeight) < 1000 ? "  [SMALL PREVIEW]" : "";
     Console.WriteLine($"{name,-58} {size,-11} {thumbSize,-9} {sw.ElapsedMilliseconds,5}  {info}{warn}");
 
     if (focus)
     {
-        var (gray, gw, gh, gstride) = ImageDecoder.Pixels(bitmap, 1024, PixelFormats.Gray8);
-        var sharp = FocusAnalyzer.Score(gray, gw, gh, gstride);
-        // Blur the analysis image itself (3 box-blur passes ≈ Gaussian), mimicking missed focus or shake at viewing size.
-        string Blurred(int radius) => FocusAnalyzer.Score(BoxBlur(gray, gw, gh, gstride, radius), gw, gh, gstride)?.ToString("0") ?? "-";
-        Console.WriteLine($"{"",58}   focus: original {sharp?.ToString("0") ?? "-"}, slight blur {Blurred(1)}, blurry {Blurred(2)}, very blurry {Blurred(4)}");
+        // Analyse at the same size the app does, then blur that image by realistic amounts:
+        // slight ≈ σ 0.8 px (a small focus miss), blurred ≈ σ 1.4 px, very ≈ σ 2.4 px, motion = 7 px sideways shake.
+        var source = viaCodec ? bitmap : ImageDecoder.Decode(large, FocusAnalyzer.AnalysisLongSide);
+        var (gray, gw, gh, gstride) = ImageDecoder.Pixels(source, FocusAnalyzer.AnalysisLongSide, PixelFormats.Gray8);
+        string S(byte[] g) => FocusAnalyzer.Analyze(g, gw, gh, gstride) is { } a ? $"{a.Score:0}/{a.EdgeWidth:0.00}" : "-";
+        Console.WriteLine($"{"",58}   focus (score/edge px): original {S(gray)}, slight {S(BoxBlur(gray, gw, gh, gstride, 1, 1))}, " +
+                          $"blurred {S(BoxBlur(gray, gw, gh, gstride, 1))}, very {S(BoxBlur(gray, gw, gh, gstride, 2))}, " +
+                          $"motion {S(BoxBlur(gray, gw, gh, gstride, 1, 3, horizontalOnly: true))}");
     }
 }
 
-static byte[] BoxBlur(byte[] src, int w, int h, int stride, int radius)
+// Box blur repeated `passes` times (3 passes ≈ Gaussian). horizontalOnly = motion blur, like a sideways shake.
+static byte[] BoxBlur(byte[] src, int w, int h, int stride, int radius, int passes = 3, bool horizontalOnly = false)
 {
     var a = (byte[])src.Clone();
     var b = new byte[a.Length];
-    for (int pass = 0; pass < 3; pass++)
+    for (int pass = 0; pass < passes; pass++)
     {
         for (int y = 0; y < h; y++)          // horizontal
             for (int x = 0; x < w; x++)
@@ -180,6 +184,7 @@ static byte[] BoxBlur(byte[] src, int w, int h, int stride, int radius)
                 for (int d = -radius; d <= radius; d++) { int xx = Math.Clamp(x + d, 0, w - 1); sum += a[y * stride + xx]; n++; }
                 b[y * stride + x] = (byte)(sum / n);
             }
+        if (horizontalOnly) { Buffer.BlockCopy(b, 0, a, 0, a.Length); continue; }
         for (int y = 0; y < h; y++)          // vertical
             for (int x = 0; x < w; x++)
             {

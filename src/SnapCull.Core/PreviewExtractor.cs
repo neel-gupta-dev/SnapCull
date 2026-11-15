@@ -135,7 +135,9 @@ public static class PreviewExtractor
                 return ReadJpegExif(Io.Read(s, 0, (int)Math.Min(s.Length, 256 * 1024))!)?.Exif;
             case Container.Raf when RafPreviewRange(s) is { } r:
                 var head = Io.Read(s, r.Offset, (int)Math.Min(r.Length, 256 * 1024));
-                return head is null ? null : ReadJpegExif(head)?.Exif;
+                if (head is null || ReadJpegExif(head)?.Exif is not { } rafExif) return null;
+                ApplyRafSize(s, rafExif);
+                return rafExif;
             case Container.Cr3:
                 var exif = new ExifData();
                 foreach (var box in Bmff.Boxes(s, 0, s.Length))
@@ -150,7 +152,7 @@ public static class PreviewExtractor
             case Container.Crw:
                 return CiffParser.Read(s);
             case Container.Tiff:
-                return TiffParser.Parse(s, 0)?.Exif;
+                return TiffParser.Parse(s, 0) is { } raw ? WithSize(raw) : null;
             default:
                 return null;
         }
@@ -201,6 +203,7 @@ public static class PreviewExtractor
         if (tiff is null) return FromScan(s, size, new ExifData());
         var candidates = Validate(s, tiff.JpegRanges);
         candidates.AddRange(RgbCandidates(tiff));
+        tiff.UseLargestImageAsSize(candidates.Select(c => (c.Width, c.Height)));
         return FromCandidates(s, size, candidates, tiff.Exif);
     }
 
@@ -232,6 +235,8 @@ public static class PreviewExtractor
 
         var candidates = Validate(s, ranges);
         candidates.AddRange(found);
+        // CR3's first track is a full-resolution JPEG, so the biggest preview is the photo's size.
+        if (candidates.MaxBy(c => c.Area) is { } biggest) exif.SetSizeIfUnknown(biggest.Width, biggest.Height);
         return FromCandidates(s, size, candidates, exif);
     }
 
@@ -308,7 +313,43 @@ public static class PreviewExtractor
         var c = candidates[0];
         var bytes = c.ReadBytes(s);
         var exif = ReadJpegExif(bytes)?.Exif ?? new ExifData();
+        ApplyRafSize(s, exif);
         return new PreviewResult(bytes, c.Width, c.Height, exif);
+    }
+
+    /// <summary>
+    /// The real photo size of a RAF is in Fujifilm's "CFA header" (the embedded JPEG is often smaller):
+    /// records of tag, length and data; 0x111 is the cropped (output) size, 0x100 the full sensor size.
+    /// </summary>
+    static void ApplyRafSize(Stream s, ExifData exif)
+    {
+        var header = Io.Read(s, 0, 100);
+        if (header is null) return;
+        long at = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(92));
+        long length = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(96));
+        if (length < 8 || length > 1 << 20 || Io.Read(s, at, (int)length) is not { } cfa) return;
+
+        int count = (int)Math.Min(BinaryPrimitives.ReadUInt32BigEndian(cfa), 500);
+        (int A, int B)? cropped = null, full = null;
+        for (int p = 4, i = 0; i < count && p + 4 <= cfa.Length; i++)
+        {
+            int tag = BinaryPrimitives.ReadUInt16BigEndian(cfa.AsSpan(p));
+            int size = BinaryPrimitives.ReadUInt16BigEndian(cfa.AsSpan(p + 2));
+            if (p + 4 + size > cfa.Length) break;
+            if (size >= 4 && tag is 0x100 or 0x111)
+            {
+                var value = (BinaryPrimitives.ReadUInt16BigEndian(cfa.AsSpan(p + 4)), BinaryPrimitives.ReadUInt16BigEndian(cfa.AsSpan(p + 6)));
+                if (tag == 0x111) cropped = value; else full = value;
+            }
+            p += 4 + size;
+        }
+        // Old SuperCCD sensors (e.g. S5 Pro) store a diagonal layout that isn't the photo's shape; skip those.
+        if ((cropped ?? full) is var (a, b) && a > 0 && b > 0 && Math.Max(a, b) <= 2 * Math.Min(a, b))
+        {
+            // Stored as height, width of the (landscape) sensor; portrait shots are handled by the orientation tag.
+            exif.PixelWidth = Math.Max(a, b);
+            exif.PixelHeight = Math.Min(a, b);
+        }
     }
 
     // Minolta MRW: a chain of blocks, one of which ("\0TTW") is a TIFF with the EXIF data.
@@ -342,6 +383,12 @@ public static class PreviewExtractor
         var head = Io.Read(s, 0, (int)Math.Min(s.Length, 256 * 1024))!;
         var exifTiff = ReadJpegExif(head);
         var exif = exifTiff?.Exif ?? new ExifData();
+        // The JPEG's own frame header is the truth about its size (EXIF can be stale after editing).
+        if (JpegScanner.Parse(head, 0, scanToEnd: false) is { } frame)
+        {
+            exif.PixelWidth = frame.Width;
+            exif.PixelHeight = frame.Height;
+        }
 
         // For thumbnails, use the little JPEG inside the EXIF block if it has the same shape as the photo.
         if (size == PreviewSize.Thumbnail && exifTiff is not null && JpegScanner.Parse(head, 0, false) is { } main)
@@ -373,7 +420,7 @@ public static class PreviewExtractor
         switch (kind)
         {
             case Container.Tiff:
-                return TiffParser.Parse(s, 0)?.Exif;
+                return TiffParser.Parse(s, 0) is { } image ? WithSize(image) : null;
             case Container.Heif:
                 return Bmff.FindHeifExif(s) is { } r ? TiffParser.Parse(s, r.Offset)?.Exif : null;
             case Container.Png:
@@ -404,6 +451,12 @@ public static class PreviewExtractor
             default:
                 return null;
         }
+    }
+
+    static ExifData WithSize(TiffParser tiff)
+    {
+        tiff.UseLargestImageAsSize();
+        return tiff.Exif;
     }
 
     static PreviewResult? FromScan(Stream s, PreviewSize size, ExifData exif)

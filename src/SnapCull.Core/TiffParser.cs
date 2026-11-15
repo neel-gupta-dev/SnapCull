@@ -16,8 +16,9 @@ internal sealed class TiffParser
     const int MinBlobPreviewBytes = 16 * 1024;
 
     readonly bool _littleEndian;
+    bool _panasonic;
     readonly HashSet<long> _visited = [];
-    int _iso, _recommendedExposureIndex;
+    int _iso, _recommendedExposureIndex, _pixelX, _pixelY;
 
     public Stream Stream { get; }
     /// <summary>Position of the TIFF header in <see cref="Stream"/>; all TIFF offsets are relative to it.</summary>
@@ -64,7 +65,9 @@ internal sealed class TiffParser
 
         var parser = new TiffParser(stream, baseOffset, le);
         // 42 = TIFF; Olympus ORF uses "RO"/"RS", Panasonic RW2 uses 0x55.
-        if (parser.U16(header, 2) is not (42 or 0x4F52 or 0x5352 or 0x55)) return null;
+        ushort magic = parser.U16(header, 2);
+        if (magic is not (42 or 0x4F52 or 0x5352 or 0x55)) return null;
+        parser._panasonic = magic == 0x55;
 
         long next = parser.U32(header, 4);
         for (int i = 0; next != 0 && i < 16; i++)
@@ -76,7 +79,40 @@ internal sealed class TiffParser
         else if (parser._recommendedExposureIndex > 0)
             parser.Exif.Iso = parser._recommendedExposureIndex;
 
+        if (parser._pixelX > 0 && parser._pixelY > 0) parser.Exif.SetSizeIfUnknown(parser._pixelX, parser._pixelY);
         return parser;
+    }
+
+    /// <summary>
+    /// For RAW files without an EXIF pixel size. The sensor data is the largest image in the file, but it often
+    /// includes a few hidden border pixels, so when the camera's full-size preview is nearly as big, the preview's
+    /// size is the true photo size. (Not for EXIF blocks inside JPEGs, whose only extra image is a thumbnail.)
+    /// </summary>
+    public void UseLargestImageAsSize(IEnumerable<(int Width, int Height)>? previews = null)
+    {
+        if (_panasonicWidth > 0 && _panasonicHeight > 0) Exif.SetSizeIfUnknown(_panasonicWidth, _panasonicHeight);
+        var raw = Ifds.Where(i => i.Width > 0 && i.Height > 0).MaxBy(i => (long)i.Width * i.Height);
+        var preview = previews?.Where(p => p.Width > 0 && p.Height > 0).MaxBy(p => (long)p.Width * p.Height);
+        long rawArea = raw is null ? 0 : (long)raw.Width * raw.Height;
+        if (preview is { } p && (long)p.Width * p.Height >= rawArea * 0.85) Exif.SetSizeIfUnknown(p.Width, p.Height);
+        else if (raw is not null) Exif.SetSizeIfUnknown(raw.Width, raw.Height);
+    }
+
+    // Panasonic RW2 / Leica RWL keep the sensor area in their own IFD0 tags (borders 4–7, or size 2–3).
+    int _panasonicWidth, _panasonicHeight;
+    void ReadPanasonicSize(byte[] entries, int count)
+    {
+        var tags = new Dictionary<int, int>();
+        for (int i = 0; i < count; i++)
+        {
+            int e = i * 12;
+            ushort tag = U16(entries, e), type = U16(entries, e + 2);
+            if (tag is >= 2 and <= 7 && type is 3 or 4) tags[tag] = (int)FirstUInt(new Entry(entries, e, type, 1, TypeSize(type), -1));
+        }
+        if (tags.TryGetValue(4, out int top) && tags.TryGetValue(5, out int left) && tags.TryGetValue(6, out int bottom) && tags.TryGetValue(7, out int right) && bottom > top && right > left)
+            (_panasonicWidth, _panasonicHeight) = (right - left, bottom - top);
+        else if (tags.TryGetValue(2, out int w) && tags.TryGetValue(3, out int h))
+            (_panasonicWidth, _panasonicHeight) = (w, h);
     }
 
     long ParseIfd(long offset, bool isFirstMainIfd, int depth)
@@ -89,6 +125,7 @@ internal sealed class TiffParser
         if (count == 0 || count > MaxEntriesPerIfd) return 0;
         var entries = Io.Read(Stream, Base + offset + 2, count * 12);
         if (entries is null) return 0;
+        if (_panasonic && isFirstMainIfd && depth == 0) ReadPanasonicSize(entries, count);
 
         int compression = 0, width = 0, height = 0, photometric = -1, bits = 0, samples = 1, planar = 1;
         long jpegOffset = 0, jpegLength = 0;
@@ -142,6 +179,8 @@ internal sealed class TiffParser
                 case 0x9003: Exif.DateTaken ??= ParseDate(Ascii(v)); break;
                 case 0x920A: Exif.FocalLength ??= Rational(v); break;
                 case 0x9291: Exif.SubSecond ??= ParseSubSecond(Ascii(v)); break;
+                case 0xA002: _pixelX = (int)FirstUInt(v); break; // PixelXDimension: the photo's full width
+                case 0xA003: _pixelY = (int)FirstUInt(v); break;
                 case 0xA434: Exif.LensModel ??= Ascii(v); break;
                 default:
                     // Some formats store a whole JPEG as a byte blob (e.g. Panasonic RW2's JpgFromRaw, tag 0x2E).

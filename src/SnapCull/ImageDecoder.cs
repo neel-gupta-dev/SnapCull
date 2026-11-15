@@ -37,6 +37,9 @@ public static class ImageDecoder
             {
                 var preview = PreviewExtractor.Extract(path, size);
                 if (preview is null) continue;
+                // Photos that don't record their size (HEIC, PNG, some RAW) get it from the picture itself.
+                var (fullW, fullH) = SizeOf(preview);
+                preview.Exif.SetSizeIfUnknown(fullW, fullH);
                 found = new Loaded(Decode(preview, maxLongSide), preview.Exif);
                 break;
             }
@@ -94,6 +97,7 @@ public static class ImageDecoder
                 (width, height) = (frame.PixelWidth, frame.PixelHeight);
             }
             int? maxLongSide = chooseLongSide(Math.Max(width, height));
+            exif.SetSizeIfUnknown(width, height);
 
             var image = new BitmapImage();
             image.BeginInit();
@@ -209,7 +213,7 @@ public static class ImageDecoder
     /// <summary>Sharpness score (0–100) of a decoded photo; see <see cref="FocusAnalyzer"/>.</summary>
     public static double? FocusScore(BitmapSource source)
     {
-        var (pixels, w, h, stride) = Pixels(source, 1024, PixelFormats.Gray8);
+        var (pixels, w, h, stride) = Pixels(source, FocusAnalyzer.AnalysisLongSide, PixelFormats.Gray8);
         return FocusAnalyzer.Score(pixels, w, h, stride);
     }
 

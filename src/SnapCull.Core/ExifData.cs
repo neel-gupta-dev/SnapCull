@@ -23,6 +23,29 @@ public sealed class ExifData
     public double? FocalLength { get; set; }
     /// <summary>EXIF orientation, 1–8. 1 means "no rotation needed".</summary>
     public int Orientation { get; set; } = 1;
+    /// <summary>Full resolution of the photo in pixels, as stored (before orientation is applied).</summary>
+    public int? PixelWidth { get; set; }
+    public int? PixelHeight { get; set; }
+
+    /// <summary>"6000 × 4000 px · 24.0 MP", shown the way the photo is viewed (portrait shots taller than wide).</summary>
+    public string? ResolutionText
+    {
+        get
+        {
+            if (PixelWidth is not int w || PixelHeight is not int h || w <= 0 || h <= 0) return null;
+            if (Orientation is >= 5 and <= 8) (w, h) = (h, w);
+            return Invariant($"{w} × {h} px · {w * (double)h / 1_000_000:0.0} MP");
+        }
+    }
+
+    /// <summary>Sets the resolution if it isn't known yet.</summary>
+    public void SetSizeIfUnknown(int width, int height)
+    {
+        if (PixelWidth is > 0 && PixelHeight is > 0) return;
+        if (width <= 0 || height <= 0) return;
+        PixelWidth = width;
+        PixelHeight = height;
+    }
     /// <summary>Where the photo was taken, in decimal degrees (south and west are negative), if the camera recorded it.</summary>
     public double? GpsLatitude { get; set; }
     public double? GpsLongitude { get; set; }
@@ -45,12 +68,21 @@ public sealed class ExifData
             if (string.IsNullOrWhiteSpace(Model)) return brand;
             if (string.IsNullOrWhiteSpace(brand)) return Model;
             var firstWord = brand.Split(' ')[0];
-            return Model.StartsWith(firstWord, StringComparison.OrdinalIgnoreCase) ? Model : $"{brand} {Model}";
+            // "PENTAX K-1" by RICOH IMAGING, "KODAK P880" by EASTMAN KODAK: the model already names the brand.
+            var modelFirstWord = Model.Split(' ')[0];
+            if (Model.StartsWith(firstWord, StringComparison.OrdinalIgnoreCase) || KnownBrands.Contains(modelFirstWord)) return Model;
+            return $"{brand} {Model}";
         }
     }
 
     static readonly string[] CompanySuffixes =
-        ["CORPORATION", "CORP.", "CORP", "IMAGING", "CAMERA", "AG", "TECHWIN", "ELECTRONICS", "CO.,LTD.", "CO.,", "CO.", "LTD.", "LTD", "INC.", "INC", "GMBH"];
+        ["CORPORATION", "CORP.", "CORP", "IMAGING", "CAMERA", "AG", "TECHWIN", "ELECTRONICS", "COMPANY", "CO.,LTD.", "CO.,", "CO.", "LTD.", "LTD", "INC.", "INC", "GMBH"];
+
+    static readonly HashSet<string> KnownBrands = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Canon", "NIKON", "SONY", "FUJIFILM", "OLYMPUS", "Panasonic", "PENTAX", "RICOH", "LEICA", "KODAK", "SIGMA",
+        "SAMSUNG", "HASSELBLAD", "Mamiya", "Leaf", "Phase", "Minolta", "DJI", "GoPro", "Apple", "Google", "Xiaomi", "OnePlus",
+    };
 
     /// <summary>"NIKON CORPORATION" → "NIKON", "OLYMPUS IMAGING CORP." → "OLYMPUS", "LEICA CAMERA AG" → "LEICA".</summary>
     static string? Brand(string? make)
@@ -98,6 +130,7 @@ public sealed class ExifData
         Iso ??= other.Iso;
         FocalLength ??= other.FocalLength;
         if (Orientation == 1) Orientation = other.Orientation;
+        if (other.PixelWidth is int w && other.PixelHeight is int h) SetSizeIfUnknown(w, h);
         if (!HasGps && other.HasGps)
         {
             GpsLatitude = other.GpsLatitude;

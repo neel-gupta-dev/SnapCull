@@ -32,7 +32,7 @@ Every RAW file has a full-size JPEG preview hidden inside it, put there by the c
   - The gap between frames (default 1 s) can be changed in burst review.
 - **Zoom properly:** click or **Z** for fit ↔ 100% at that spot, **+ / −** for steps from fit up to 800%, **Ctrl + mouse wheel** (or a touchpad pinch) to zoom around the pointer, **Ctrl+0 / Ctrl+1** for fit / 100%. Drag to pan. Above 200% pixels are shown crisp, for checking focus.
 - **Histogram (H)** with the percentage of clipped highlights and shadows.
-- **Camera info overlay:** body, lens, focal length, aperture, shutter speed, ISO, date and focus score.
+- **Camera info overlay:** body, lens, focal length, aperture, shutter speed, ISO, **resolution and megapixels, file size**, date, focus score and burst rank.
 - **Sort by capture time**, so a shoot from two cameras stays in the order it happened.
 - **Subfolders:** cull a whole shoot spread over several card folders in one go.
 - **Filters:** picks, rejects, not yet flagged, ★ and up, blurry or soft, sharp.
@@ -113,9 +113,24 @@ If a sidecar already exists (for example from Lightroom), SnapCull only changes 
 
 ## How the focus check works
 
-Each photo is shrunk to about 1000 pixels and split into an 8 × 8 grid. For every tile, SnapCull measures how much fine detail there is (the variance of the Laplacian), compared with how much contrast the tile has. Only the sharpest few tiles count, because in a good photo only the subject needs to be sharp; a portrait with a blurred background still counts as sharp. Dividing by contrast stops dark or flat photos from being mistaken for blurry ones.
+SnapCull judges sharpness the way your eye does. It finds real edges in the photo (a step from dark to light) and measures **how many pixels wide each edge is**. In a sharp photo, edges are about 1–1.5 px wide; a missed focus or camera shake spreads them over 2, 3 or more pixels.
 
-Scores run from 0 to 100. From 45 up a photo looks sharp, and below 33 it is probably blurry. These thresholds were calibrated on the 72 sample photos above and on blurred copies of them. The real photos had a median score of 84, while even slightly blurred copies scored 32 or less. Run `SnapCull.Probe --focus` to see the numbers. The check catches missed focus and camera shake that you'd see at screen size. Very dark, very flat, or deliberately dreamy shots can be marked SOFT, so always zoom to 100% before deleting anything.
+- **Close to 100% zoom:** the photo is analysed at 2400 px on the long side, so even a small focus miss shows.
+- **Catches camera shake:** horizontal and vertical edges are measured separately, and the worse direction counts. A sideways shake only smears edges in one direction, and judging each direction separately catches it.
+- **Ignores noise:** only clear edges count, so sensor noise at high ISO doesn't look like detail.
+- **Judges the subject:** the photo is split into an 8 × 8 grid and only the sharpest tiles decide. In a good photo only the subject needs to be in focus, so a portrait with a blurred background is still sharp.
+
+Scores run from 0 to 100 (1 px edges = 100, 2 px = 75, 3 px = 50). **From 65 up a photo looks sharp; below 50 it is probably blurry.** These thresholds were calibrated with `SnapCull.Probe --focus` on the 72 sample photos above and on copies blurred by realistic amounts:
+
+| Photos | Median score | Marked sharp | Flagged soft or blurry |
+|---|---|---|---|
+| Real photos as shot | 84 | 92% | 8% |
+| Slight focus miss (σ ≈ 0.8 px) | 64 | 46% | 54% |
+| Blurred (σ ≈ 1.4 px) | 44 | 0% | 100% (78% BLUR) |
+| Very blurred (σ ≈ 2.4 px) | 9 | 0% | 100% BLUR |
+| Sideways camera shake | 50 | 4% | 96% |
+
+The real photos that were flagged were genuinely soft: an unsharpened rendering of an old RAW file, a high-ISO frame, and 1/4 s and 1/15 s handheld shots. Very dark, very flat or deliberately dreamy shots can also be marked SOFT, so always zoom in before deleting anything. Bursts are ranked with the same edge measure, compared tile by tile where the subject is.
 
 ## Download and run
 
@@ -183,7 +198,7 @@ The most interesting file is [`PreviewExtractor.cs`](src/SnapCull.Core/PreviewEx
 ## Limitations
 
 - What you see is the camera's embedded JPEG, not a rendering of the raw data. This is the point of a culler, but it means some cameras show a smaller image at 100% zoom. Many Sony bodies embed only a 1616×1080 preview, Panasonic about 1920 px, and DJI drones and some phones under 1000 px. For those small ones SnapCull uses the Windows RAW codec when it's installed.
-- The focus check judges the photo at about 1000 px wide, so it won't notice a slight miss that only shows at 100%.
+- The focus check works at 2400 px, so on very high-resolution cameras (45 MP and up) the smallest misses that only show at full 100% can still pass as sharp. Burst ranking still compares such frames against each other.
 - Sigma X3F and Leaf MOS files show their embedded preview, but no camera info.
 - Converting to HEIC needs Microsoft's *HEIF Image Extensions* and *HEVC Video Extensions*, and the HEIC files don't include camera info. Converted photos are saved without a colour profile, so they're treated as sRGB.
 

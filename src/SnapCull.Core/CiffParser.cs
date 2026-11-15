@@ -68,6 +68,7 @@ internal static class CiffParser
                     if (seconds > 0) exif.DateTaken ??= DateTime.UnixEpoch.AddSeconds(seconds);
                     break;
                 case 0x1810 when data.Length >= 16: // image spec: width, height, pixel aspect, rotation
+                    exif.SetSizeIfUnknown((int)BinaryPrimitives.ReadUInt32LittleEndian(data), (int)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(4)));
                     exif.Orientation = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(12)) switch
                     {
                         90 => 6, 180 => 3, 270 => 8, -90 => 8, _ => exif.Orientation,

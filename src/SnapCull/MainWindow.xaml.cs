@@ -205,6 +205,7 @@ public partial class MainWindow : Window
                         State = XmpSidecar.Read(f.SidecarPath),
                         DisplayName = subfolders ? Path.GetRelativePath(folder, f.PrimaryPath) : Path.GetFileName(f.PrimaryPath),
                         FileTime = File.GetLastWriteTime(f.PrimaryPath),
+                        FileSizes = f.MediaFiles().Select(m => (Path.GetExtension(m).TrimStart('.').ToUpperInvariant(), new FileInfo(m).Length)).ToList(),
                     }).ToList();
                     if (byTime) ReadCaptureTimes(list);
                     return byTime ? SortByTime(list) : list;

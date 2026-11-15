@@ -201,49 +201,72 @@ public class FormatTests
 
 public class ImageAnalysisTests
 {
-    /// <summary>A grey picture with a sharp-edged pattern, optionally box-blurred.</summary>
-    static byte[] Pattern(int size, int blurRadius)
+    /// <summary>
+    /// A grey picture of blocks with crisp edges (like real subject detail), optionally blurred: <paramref name="passes"/>
+    /// of a 3×3 box blur, or of a sideways-only blur for <paramref name="motion"/>, plus optional sensor-like noise.
+    /// </summary>
+    static byte[] Pattern(int size, int passes, bool motion = false, int noise = 0)
     {
         var img = new byte[size * size];
-        var rnd = new Random(42);
         for (int y = 0; y < size; y++)
         for (int x = 0; x < size; x++)
-            img[y * size + x] = (byte)(((x / 7 + y / 11) % 2 == 0 ? 60 : 190) + rnd.Next(-3, 4));
-        for (int pass = 0; pass < blurRadius; pass++)
+            img[y * size + x] = (byte)((x / 16 + y / 24) % 2 == 0 ? 60 : 190);
+        for (int pass = 0; pass < passes; pass++)
         {
             var copy = (byte[])img.Clone();
             for (int y = 0; y < size; y++)
             for (int x = 0; x < size; x++)
             {
-                int sum = 0;
-                for (int dy = -1; dy <= 1; dy++)
+                int sum = 0, n = 0;
+                for (int dy = motion ? 0 : -1; dy <= (motion ? 0 : 1); dy++)
                 for (int dx = -1; dx <= 1; dx++)
+                {
                     sum += copy[Math.Clamp(y + dy, 0, size - 1) * size + Math.Clamp(x + dx, 0, size - 1)];
-                img[y * size + x] = (byte)(sum / 9);
+                    n++;
+                }
+                img[y * size + x] = (byte)(sum / n);
             }
         }
+        var rnd = new Random(42);
+        if (noise > 0)
+            for (int i = 0; i < img.Length; i++) img[i] = (byte)Math.Clamp(img[i] + rnd.Next(-noise, noise + 1), 0, 255);
         return img;
     }
+
+    static double Score(byte[] img) => FocusAnalyzer.Score(img, 512, 512, 512)!.Value;
 
     [Fact]
     public void Blur_lowers_the_focus_score_past_the_thresholds()
     {
-        double sharp = FocusAnalyzer.Score(Pattern(512, 0), 512, 512, 512)!.Value;
-        double soft = FocusAnalyzer.Score(Pattern(512, 2), 512, 512, 512)!.Value;
-        double blurry = FocusAnalyzer.Score(Pattern(512, 20), 512, 512, 512)!.Value;
+        double sharp = Score(Pattern(512, 0)), soft = Score(Pattern(512, 2)), blurry = Score(Pattern(512, 12));
 
         Assert.True(sharp > soft && soft > blurry, $"sharp {sharp:0}, soft {soft:0}, blurry {blurry:0}");
         Assert.Equal(FocusVerdict.Sharp, FocusAnalyzer.Verdict(sharp));
+        Assert.NotEqual(FocusVerdict.Sharp, FocusAnalyzer.Verdict(soft));
         Assert.Equal(FocusVerdict.Blurry, FocusAnalyzer.Verdict(blurry));
+    }
+
+    [Fact]
+    public void Sideways_shake_is_caught_even_though_horizontal_edges_stay_sharp()
+    {
+        double shaken = Score(Pattern(512, 6, motion: true));
+        Assert.NotEqual(FocusVerdict.Sharp, FocusAnalyzer.Verdict(shaken));
+    }
+
+    [Fact]
+    public void Noise_does_not_make_a_blurred_photo_look_sharp()
+    {
+        double noisyBlurred = Score(Pattern(512, 12, noise: 8));
+        Assert.NotEqual(FocusVerdict.Sharp, FocusAnalyzer.Verdict(noisyBlurred));
+        Assert.Equal(FocusVerdict.Sharp, FocusAnalyzer.Verdict(Score(Pattern(512, 0, noise: 8))));
     }
 
     [Fact]
     public void Focus_score_ignores_overall_brightness_and_contrast()
     {
-        var normal = Pattern(512, 0);
+        var normal = Pattern(512, 1);
         var dim = normal.Select(v => (byte)(v / 4)).ToArray();
-        double a = FocusAnalyzer.Score(normal, 512, 512, 512)!.Value;
-        double b = FocusAnalyzer.Score(dim, 512, 512, 512)!.Value;
+        double a = Score(normal), b = Score(dim);
         Assert.InRange(b, a * 0.8, a * 1.2);
     }
 

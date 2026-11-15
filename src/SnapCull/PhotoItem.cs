@@ -38,6 +38,34 @@ public sealed class PhotoItem(PhotoFiles files) : INotifyPropertyChanged
     public string DisplayName { get; set; } = Path.GetFileName(files.PrimaryPath);
     /// <summary>When the file was last changed — used to sort photos that have no capture time.</summary>
     public DateTime FileTime { get; set; }
+    /// <summary>Size of each file of the photo, e.g. [("CR3", 28 MB), ("JPG", 9 MB)].</summary>
+    public IReadOnlyList<(string Kind, long Bytes)> FileSizes { get; set; } = [];
+
+    /// <summary>"6000 × 4000 px · 24.0 MP · 28.4 MB CR3 + 9.1 MB JPG".</summary>
+    public string? ResolutionLine
+    {
+        get
+        {
+            var size = FileSizes.Count switch
+            {
+                0 => null,
+                1 => FormatBytes(FileSizes[0].Bytes),
+                _ => string.Join(" + ", FileSizes.Select(f => $"{FormatBytes(f.Bytes)} {f.Kind}")),
+            };
+            var resolution = _exif?.ResolutionText;
+            return (resolution, size) switch
+            {
+                (null, null) => null,
+                (null, _) => size,
+                (_, null) => resolution,
+                _ => $"{resolution} · {size}",
+            };
+        }
+    }
+
+    static string FormatBytes(long bytes) => bytes >= 1024 * 1024
+        ? $"{bytes / (1024.0 * 1024):0.0} MB"
+        : $"{Math.Max(1, bytes / 1024)} KB";
 
     /// <summary>"CR3 + JPG", "NEF", "JPG".</summary>
     public string FormatText => string.Join(" + ", Files.MediaFiles().Select(f => Path.GetExtension(f).TrimStart('.').ToUpperInvariant()));
@@ -90,7 +118,7 @@ public sealed class PhotoItem(PhotoFiles files) : INotifyPropertyChanged
         set
         {
             if (!Set(ref _exif, value)) return;
-            Changed(nameof(HasInfo)); Changed(nameof(CameraLine)); Changed(nameof(LensLine));
+            Changed(nameof(HasInfo)); Changed(nameof(CameraLine)); Changed(nameof(LensLine)); Changed(nameof(ResolutionLine));
             Changed(nameof(SettingsLine)); Changed(nameof(DateLine));
         }
     }

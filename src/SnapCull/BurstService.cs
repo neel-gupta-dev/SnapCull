@@ -99,7 +99,8 @@ public static class BurstService
         }
 
         // Frames that couldn't be read are ranked last with an empty measure.
-        var filled = measures.Select(m => m ?? new FrameMeasure(new double[BurstRanker.Grid * BurstRanker.Grid], 1, 1)).ToList();
+        var empty = new double[BurstRanker.Grid * BurstRanker.Grid];
+        var filled = measures.Select(m => m ?? new FrameMeasure(empty, empty, 1, 1)).ToList();
         return BurstRanker.Rank(filled);
     }
 }

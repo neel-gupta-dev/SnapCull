@@ -56,7 +56,7 @@ public sealed class ImageCache(int capacity)
 public sealed class BackgroundLoader
 {
     const int ThumbnailLongSide = 256;
-    const int FocusLongSide = 1024;
+    const int FocusLongSide = FocusAnalyzer.AnalysisLongSide;
 
     readonly IReadOnlyList<PhotoItem> _items;
     readonly Dictionary<PhotoItem, int> _index;
