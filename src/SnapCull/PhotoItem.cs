@@ -109,8 +109,28 @@ public sealed class PhotoItem(PhotoFiles files) : INotifyPropertyChanged
     public BitmapSource? Thumbnail
     {
         get => _thumbnail;
-        set => Set(ref _thumbnail, value);
+        set { if (Set(ref _thumbnail, value)) Changed(nameof(GridImage)); }
     }
+
+    // ── Grid view ──
+
+    BitmapSource? _largeThumbnail;
+    bool _isGridCurrent, _isGridSelected;
+
+    /// <summary>A sharper thumbnail (about 512 px) loaded only while the grid shows big thumbnails.</summary>
+    public BitmapSource? LargeThumbnail
+    {
+        get => _largeThumbnail;
+        set { if (Set(ref _largeThumbnail, value)) Changed(nameof(GridImage)); }
+    }
+
+    /// <summary>What the grid shows: the sharp version when it's loaded, otherwise the filmstrip thumbnail.</summary>
+    public BitmapSource? GridImage => _largeThumbnail ?? _thumbnail;
+
+    /// <summary>The photo the keyboard is on in the grid.</summary>
+    public bool IsGridCurrent { get => _isGridCurrent; set => Set(ref _isGridCurrent, value); }
+    /// <summary>Part of a multi-photo selection in the grid.</summary>
+    public bool IsGridSelected { get => _isGridSelected; set => Set(ref _isGridSelected, value); }
 
     public ExifData? Exif
     {

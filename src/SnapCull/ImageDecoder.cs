@@ -41,6 +41,9 @@ public static class ImageDecoder
                 var (fullW, fullH) = SizeOf(preview);
                 preview.Exif.SetSizeIfUnknown(fullW, fullH);
                 found = new Loaded(Decode(preview, maxLongSide), preview.Exif);
+                // Some files carry a blank small preview; make the thumbnail from the large one instead.
+                if (size == PreviewSize.Thumbnail && IsNearlyBlack(found.Bitmap, averageBelow: 20) && PreviewExtractor.Extract(path, PreviewSize.Largest) is { } large)
+                    found = new Loaded(Decode(large, maxLongSide), found.Exif);
                 break;
             }
             catch (Exception ex)
@@ -66,13 +69,13 @@ public static class ImageDecoder
     }
 
     /// <summary>True for renders that came back (almost) completely black, which some RAW formats do through the Windows codec.</summary>
-    public static bool IsNearlyBlack(BitmapSource bitmap)
+    public static bool IsNearlyBlack(BitmapSource bitmap, int averageBelow = 6)
     {
         var (pixels, w, h, stride) = Pixels(bitmap, 64, PixelFormats.Gray8);
         long sum = 0;
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++) sum += pixels[y * stride + x];
-        return sum < (long)w * h * 6; // average below 6 out of 255
+        return sum < (long)w * h * averageBelow; // average brightness out of 255
     }
 
     /// <summary>Renders a RAW file with whatever Windows codec is installed (the Raw Image Extension, for RAW formats).</summary>

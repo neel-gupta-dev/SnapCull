@@ -11,7 +11,7 @@ static class ContactSheet
 {
     const int Cell = 220, Label = 34, Columns = 8;
 
-    public static void Render(IReadOnlyList<string> paths, string output)
+    public static void Render(IReadOnlyList<string> paths, string output, PreviewSize size = PreviewSize.Largest)
     {
         int rows = (paths.Count + Columns - 1) / Columns;
         var visual = new DrawingVisual();
@@ -22,7 +22,7 @@ static class ContactSheet
             for (int i = 0; i < paths.Count; i++)
             {
                 double x = i % Columns * Cell, y = i / Columns * (Cell + Label);
-                var loaded = ImageDecoder.TryLoad(PhotoFiles.FromPath(paths[i]), PreviewSize.Largest, 400);
+                var loaded = ImageDecoder.TryLoad(PhotoFiles.FromPath(paths[i]), size, size == PreviewSize.Thumbnail ? 256 : 400);
                 if (loaded is not null)
                 {
                     var b = loaded.Bitmap;

@@ -31,6 +31,12 @@ Every RAW file has a full-size JPEG preview hidden inside it, put there by the c
   - Filters: *Bursts only*, *Best of each burst*, and *Collapse bursts* (single shots plus each burst's best).
   - The gap between frames (default 1 s) can be changed in burst review.
 - **Zoom properly:** click or **Z** for fit ↔ 100% at that spot, **+ / −** for steps from fit up to 800%, **Ctrl + mouse wheel** (or a touchpad pinch) to zoom around the pointer, **Ctrl+0 / Ctrl+1** for fit / 100%. Drag to pan. Above 200% pixels are shown crisp, for checking focus.
+- **Grid view (G):** every photo as a thumbnail, with the same badges as the filmstrip (pick, reject, stars, label, BLUR/SOFT, burst rank).
+  - Thumbnails go from 100 to 420 px: use the slider in the status bar, **Ctrl + mouse wheel** (or pinch), or **+ / −**. Big thumbnails load sharper versions for the photos on screen.
+  - Arrows move, **Enter** or a double-click opens a photo, and **G** or **Esc** goes back.
+  - **Select several** with Ctrl+click, Shift+click, Shift+arrows or Ctrl+A, then press P, X, U, 0–5 or 6–9 to rate them all at once (one Ctrl+Z undoes it).
+  - With two photos selected, **C** compares them side by side.
+  - It stays fast with thousands of photos, because only the rows on screen are drawn.
 - **Histogram (H)** with the percentage of clipped highlights and shadows.
 - **Camera info overlay:** body, lens, focal length, aperture, shutter speed, ISO, **resolution and megapixels, file size**, date, focus score and burst rank.
 - **Sort by capture time**, so a shoot from two cameras stays in the order it happened.
@@ -61,7 +67,9 @@ Every RAW file has a full-size JPEG preview hidden inside it, put there by the c
 | Z, Space or click | Fit ↔ 100% |
 | + / −, Ctrl + wheel | Zoom in / out (up to 800%) |
 | Ctrl+0 / Ctrl+1 | Fit to window / 100% |
-| C | Compare mode |
+| G | Grid view (Enter opens a photo) |
+| Ctrl/Shift + click, Shift + arrows, Ctrl+A | Grid: select several photos, then rate them all |
+| C | Compare mode (in the grid: the two selected photos) |
 | B | Burst review (all frames of a burst, best first) |
 | K | Keep the burst's best frame, reject the rest |
 | Tab | Compare mode: switch sides. Otherwise: filmstrip on/off |

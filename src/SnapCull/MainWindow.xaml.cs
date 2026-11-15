@@ -52,6 +52,9 @@ public partial class MainWindow : Window
         new("Ctrl + wheel", "Zoom at the pointer (or pinch on a touchpad)"),
         new("Ctrl + 0 / 1", "Fit to window / 100%"),
         new("C", "Compare two photos side by side"),
+        new("G", "Grid view of all photos (Enter opens one)"),
+        new("Ctrl + wheel / + −", "Grid: bigger or smaller thumbnails"),
+        new("Ctrl/Shift + click", "Grid: select several, then rate them all"),
         new("B", "Burst review: all frames of this burst, best first"),
         new("K", "Burst: keep the best frame, reject the rest"),
         new("Tab", "Compare: switch side · otherwise filmstrip on/off"),
@@ -129,7 +132,8 @@ public partial class MainWindow : Window
         ApplyPanelVisibility();
     }
 
-    PhotoItem? Current => _active.Item;
+    PhotoItem? Current => GridVisible ? GridPanel.CurrentItem : _active.Item;
+    bool GridVisible => GridPanel.Visibility == Visibility.Visible;
     PhotoViewer Other => ReferenceEquals(_active, ViewerA) ? ViewerB : ViewerA;
 
     // ───────────────────────────── Opening folders ─────────────────────────────
@@ -282,6 +286,9 @@ public partial class MainWindow : Window
         _suppressSelection = false;
         ViewerA.Show(null);
         ViewerB.Show(null);
+
+        _largeThumbnails?.Clear();
+        if (GridVisible) GridPanel.SetItems(_view.Cast<PhotoItem>().ToList());
 
         _loader = new BackgroundLoader(photos, Dispatcher, _settings.CheckFocus);
         _loader.FocusProgress += Loader_FocusProgress;
@@ -462,6 +469,12 @@ public partial class MainWindow : Window
 
         index = Math.Clamp(index, 0, _view.Count - 1);
         var item = (PhotoItem)_view.GetItemAt(index);
+        if (GridVisible)
+        {
+            GridPanel.SetCurrent(item);
+            _loader?.Focus(item);
+            return;
+        }
         _suppressSelection = true;
         Filmstrip.SelectedIndex = index;
         _suppressSelection = false;
@@ -602,6 +615,16 @@ public partial class MainWindow : Window
             }
             return;
         }
+        if (GridVisible && GridPanel.HasMultiSelection)
+        {
+            // Several photos selected in the grid: rate them all as one undoable step.
+            if (_busy) return;
+            var targets = GridPanel.SelectedItems;
+            Record(targets.Select(t => (t, change(t.State))).ToList());
+            Refresh(select: Current, fallbackIndex: Math.Max(0, CurrentIndex));
+            SetStatus($"Changed {targets.Count} photos.   Ctrl+Z undoes it.");
+            return;
+        }
         ApplyChange(change);
     }
 
@@ -665,8 +688,97 @@ public partial class MainWindow : Window
         _suppressSelection = true;
         _view.Refresh();
         _suppressSelection = false;
+        if (GridVisible)
+        {
+            GridPanel.SetItems(_view.Cast<PhotoItem>().ToList());
+            // Staying on the same photo keeps the grid's multi-selection.
+            if (select is not null && Matches(select) && ReferenceEquals(select, GridPanel.CurrentItem))
+            {
+                GridPanel.SetCurrent(select, clearSelection: false);
+                return;
+            }
+        }
         int index = select is not null && Matches(select) ? _view.IndexOf(select) : fallbackIndex;
         GoTo(index);
+    }
+
+    // ───────────────────────────── Grid view ─────────────────────────────
+
+    LargeThumbnailLoader? _largeThumbnails;
+    bool _filmstripBeforeGrid;
+
+    void GridButton_Click(object sender, RoutedEventArgs e) => ToggleGrid();
+
+    void ToggleGrid()
+    {
+        if (GridVisible) { ExitGrid(GridPanel.CurrentItem); return; }
+        if (_items.Count == 0) { GridButton.IsChecked = false; return; }
+
+        var current = Current;
+        ExitCompare();
+        ExitZoom();
+        CloseBurstReview();
+        _largeThumbnails ??= new LargeThumbnailLoader(Dispatcher);
+        GridPanel.LargeThumbnails = _largeThumbnails;
+        GridPanel.CellSize = _settings.GridCellSize;
+        GridPanel.Visibility = Visibility.Visible;
+        GridButton.IsChecked = true;
+        GridSizePanel.Visibility = Visibility.Visible;
+        GridSizeSlider.Value = GridPanel.CellSize;
+        _filmstripBeforeGrid = Filmstrip.Visibility == Visibility.Visible;
+        Filmstrip.Visibility = Visibility.Collapsed;   // the grid replaces the filmstrip
+
+        GridPanel.SetItems(_view.Cast<PhotoItem>().ToList());
+        GridPanel.SetCurrent(current is not null && Matches(current) ? current : _view.Cast<PhotoItem>().FirstOrDefault());
+        SetStatus("Grid: arrows move, Enter opens, Ctrl/Shift+click or Shift+arrows select several, Ctrl+wheel or + / − change the size, G returns");
+    }
+
+    /// <summary>Back to the single-photo view, showing <paramref name="item"/>.</summary>
+    void ExitGrid(PhotoItem? item)
+    {
+        if (!GridVisible) return;
+        GridPanel.ClearSelection();
+        GridPanel.SetCurrent(null, scroll: false);
+        GridPanel.Visibility = Visibility.Collapsed;
+        GridButton.IsChecked = false;
+        GridSizePanel.Visibility = Visibility.Collapsed;
+        Filmstrip.Visibility = _filmstripBeforeGrid ? Visibility.Visible : Visibility.Collapsed;
+        if (item is not null && _view.IndexOf(item) is >= 0 and var i) GoTo(i);
+        else GoTo(Math.Max(0, CurrentIndex));
+    }
+
+    void GridPanel_OpenRequested(PhotoItem item) => ExitGrid(item);
+
+    void GridPanel_SelectionChanged()
+    {
+        int n = GridPanel.SelectedItems.Count;
+        if (n > 1) SetStatus($"{n} photos selected: P, X, U, 0–5 and 6–9 apply to all of them.   Esc clears the selection.");
+    }
+
+    void GridPanel_CellSizeChanged(double size)
+    {
+        _settings.GridCellSize = size;
+        _settings.Save();
+        if (Math.Abs(GridSizeSlider.Value - size) > 0.5) GridSizeSlider.Value = size;
+    }
+
+    void GridSizeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        // The slider reports its first value while the window is still being built, before the grid exists.
+        if (GridPanel is null || !GridVisible || Math.Abs(GridPanel.CellSize - e.NewValue) < 0.5) return;
+        GridPanel.CellSize = e.NewValue;
+        _settings.GridCellSize = e.NewValue;
+    }
+
+    /// <summary>Compare from the grid: with exactly two photos selected, those two side by side.</summary>
+    void CompareFromGrid()
+    {
+        var selected = GridPanel.SelectedItems;
+        var first = selected.Count == 2 ? selected[0] : GridPanel.CurrentItem;
+        var second = selected.Count == 2 ? selected[1] : null;
+        ExitGrid(first);
+        ToggleCompare();
+        if (second is not null && _compare && _view.IndexOf(second) is >= 0 and var i) GoTo(i);
     }
 
     void FilterCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -786,7 +898,8 @@ public partial class MainWindow : Window
     void ViewerHost_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
         // Ctrl + wheel (or a touchpad pinch) zooms, handled by the viewer; when zoomed, the wheel scrolls the photo.
-        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 || _active.IsZoomed || Current is null) return;
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 || _active.IsZoomed || Current is null
+            || GridVisible || BurstPanel.Visibility == Visibility.Visible) return; // the grid and burst review scroll normally
         e.Handled = true;
         _wheelDelta += e.Delta;
         if (_wheelDelta >= 120) { _wheelDelta = 0; Previous(); }
@@ -818,6 +931,9 @@ public partial class MainWindow : Window
                 case Key.E when (Keyboard.Modifiers & ModifierKeys.Shift) != 0: ShowConvert(startWithCurrent: false); break;
                 case Key.E: ShowExport(); break;
                 case Key.Z: Undo(); break;
+                case Key.A when GridVisible: GridPanel.SelectAll(); break;
+                case Key.OemPlus or Key.Add when GridVisible: GridPanel.ChangeSize(+1); break;
+                case Key.OemMinus or Key.Subtract when GridVisible: GridPanel.ChangeSize(-1); break;
                 case Key.OemPlus or Key.Add: _ = _active.ZoomStepAsync(+1); break;
                 case Key.OemMinus or Key.Subtract: _ = _active.ZoomStepAsync(-1); break;
                 case Key.D0 or Key.NumPad0: ExitZoom(); break;
@@ -826,6 +942,37 @@ public partial class MainWindow : Window
             }
             e.Handled = handled;
             return;
+        }
+
+        // Grid view: arrows move (Shift extends the selection); rating keys fall through and apply to the selection.
+        if (GridVisible && BurstPanel.Visibility != Visibility.Visible)
+        {
+            bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+            handled = true;
+            switch (key)
+            {
+                case Key.Left: GridPanel.Move(-1, 0, shift); break;
+                case Key.Right: GridPanel.Move(1, 0, shift); break;
+                case Key.Up: GridPanel.Move(0, -1, shift); break;
+                case Key.Down: GridPanel.Move(0, 1, shift); break;
+                case Key.PageUp: GridPanel.Move(0, -4, shift); break;
+                case Key.PageDown: GridPanel.Move(0, 4, shift); break;
+                case Key.Home: GoTo(0); break;
+                case Key.End: GoTo(_view.Count - 1); break;
+                case Key.Enter or Key.Space or Key.Z: if (GridPanel.CurrentItem is { } open) ExitGrid(open); break;
+                case Key.G: ExitGrid(Current); break;
+                case Key.Escape:
+                    if (GridPanel.HasMultiSelection) GridPanel.ClearSelection();
+                    else ExitGrid(Current);
+                    break;
+                case Key.C: CompareFromGrid(); break;
+                case Key.OemPlus or Key.Add: GridPanel.ChangeSize(+1); break;
+                case Key.OemMinus or Key.Subtract: GridPanel.ChangeSize(-1); break;
+                case Key.Tab or Key.H or Key.I: break; // single-photo view options; nothing to do in the grid
+                default: handled = false; break;
+            }
+            if (handled) { e.Handled = true; return; }
+            handled = true;
         }
 
         // Burst review: arrows move between frames; rating keys apply to the highlighted frame.
@@ -872,6 +1019,7 @@ public partial class MainWindow : Window
             case Key.U: SetFlag(CullFlag.None); break;
             case Key.A: ToggleAutoAdvance(); break;
             case Key.B: ToggleBurstReview(); break;
+            case Key.G: ToggleGrid(); break;
             case Key.K: KeepBestRejectRest(); break;
 
             case Key.Z or Key.Space: ToggleZoom(); break;

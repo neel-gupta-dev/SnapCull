@@ -175,6 +175,91 @@ public sealed class BackgroundLoader
 }
 
 /// <summary>
+/// Loads sharper (about 512 px) thumbnails for the photos currently visible in the grid when thumbnails are shown big.
+/// Keeps a limited number in memory, dropping the ones used longest ago.
+/// </summary>
+public sealed class LargeThumbnailLoader
+{
+    const int LongSide = 512;
+    const int Capacity = 240;
+
+    readonly Dispatcher _dispatcher;
+    readonly LinkedList<PhotoItem> _loaded = new();     // most recently used first (UI thread only)
+    readonly Lock _lock = new();
+    readonly SemaphoreSlim _signal = new(0);
+    readonly HashSet<PhotoItem> _inProgress = [];
+    List<PhotoItem> _wanted = [];
+    CancellationTokenSource _cts = new();
+    bool _started;
+
+    public LargeThumbnailLoader(Dispatcher dispatcher) => _dispatcher = dispatcher;
+
+    /// <summary>The photos on screen now; earlier requests that scrolled out of view are dropped.</summary>
+    public void Request(IReadOnlyList<PhotoItem> visible)
+    {
+        foreach (var item in visible.Where(i => i.LargeThumbnail is not null))
+        {
+            _loaded.Remove(item);
+            _loaded.AddFirst(item);
+        }
+        lock (_lock) _wanted = visible.Where(i => i.LargeThumbnail is null && i.Thumbnail is not null).ToList();
+        if (!_started)
+        {
+            _started = true;
+            for (int i = 0; i < 2; i++) Task.Factory.StartNew(Work, TaskCreationOptions.LongRunning);
+        }
+        _signal.Release();
+    }
+
+    /// <summary>Frees all sharp thumbnails (when another folder is opened).</summary>
+    public void Clear()
+    {
+        lock (_lock) _wanted = [];
+        foreach (var item in _loaded) item.LargeThumbnail = null;
+        _loaded.Clear();
+    }
+
+    PhotoItem? Next()
+    {
+        lock (_lock)
+        {
+            var item = _wanted.FirstOrDefault(i => !_inProgress.Contains(i));
+            if (item is null) return null;
+            _wanted.Remove(item);
+            _inProgress.Add(item);
+            return item;
+        }
+    }
+
+    void Work()
+    {
+        Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
+        var ct = _cts.Token;
+        while (!ct.IsCancellationRequested)
+        {
+            _signal.Wait(ct);
+            while (Next() is { } item)
+            {
+                var loaded = ImageDecoder.TryLoad(item.Files, PreviewSize.Largest, LongSide);
+                _dispatcher.InvokeAsync(() =>
+                {
+                    lock (_lock) _inProgress.Remove(item);
+                    if (loaded is null) return;
+                    item.LargeThumbnail = loaded.Bitmap;
+                    _loaded.Remove(item);
+                    _loaded.AddFirst(item);
+                    while (_loaded.Count > Capacity)
+                    {
+                        _loaded.Last!.Value.LargeThumbnail = null;
+                        _loaded.RemoveLast();
+                    }
+                }, DispatcherPriority.Background);
+            }
+        }
+    }
+}
+
+/// <summary>
 /// Saves ratings to .xmp sidecars on a background thread, in order, so rating never waits on the disk.
 /// </summary>
 public sealed class SidecarWriter
@@ -228,6 +313,8 @@ public sealed class AppSettings
     public bool SortByCaptureTime { get; set; }
     /// <summary>The last Convert settings, so the dialog opens the way it was used (except the destination).</summary>
     public ConvertOptions? LastConvert { get; set; }
+    /// <summary>Thumbnail size in the grid view, in pixels.</summary>
+    public double GridCellSize { get; set; } = 190;
     /// <summary>Frames up to this many seconds apart can form a burst.</summary>
     public double BurstGapSeconds { get; set; } = BurstDetector.DefaultGapSeconds;
 

@@ -193,10 +193,13 @@ internal sealed class TiffParser
         Ifds.Add(new IfdInfo(Base + offset, depth, width, height, compression, photometric, bits, samples, planar,
             stripOffsets?.Select(o => (uint)Math.Min(uint.MaxValue, Base + o)).ToArray() ?? [], stripCounts ?? []));
 
-        if (jpegOffset > 0 && jpegLength > 0)
+        // Images that aren't pictures — raw sensor data, or Apple's depth and segmentation maps (photometric
+        // 32768 and up) — must never be used as previews, even when they're stored as JPEG.
+        bool picture = photometric < 32768;
+        if (picture && jpegOffset > 0 && jpegLength > 0)
             JpegRanges.Add(new ByteRange(Base + jpegOffset, jpegLength));
         // A single compressed strip may be a JPEG preview (CR2 IFD0) or raw data; validation sorts that out later.
-        if (compression != 1 && stripOffsets is { Length: 1 } && stripCounts is { Length: 1 } && stripCounts[0] > 0)
+        if (picture && compression != 1 && stripOffsets is { Length: 1 } && stripCounts is { Length: 1 } && stripCounts[0] > 0)
             JpegRanges.Add(new ByteRange(Base + stripOffsets[0], stripCounts[0]));
 
         foreach (var sub in subIfds) ParseIfd(sub, isFirstMainIfd: false, depth + 1);

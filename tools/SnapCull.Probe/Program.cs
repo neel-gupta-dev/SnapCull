@@ -81,7 +81,7 @@ if (args.Contains("--sheet"))
     Exception? failure = null;
     var thread = new Thread(() =>
     {
-        try { ContactSheet.Render(photos, output); }
+        try { ContactSheet.Render(photos, output, args.Contains("--thumbs") ? PreviewSize.Thumbnail : PreviewSize.Largest); }
         catch (Exception ex) { failure = ex; }
     });
     thread.SetApartmentState(ApartmentState.STA); // WPF drawing needs an STA thread

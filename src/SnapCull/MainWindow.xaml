@@ -104,9 +104,11 @@
         <CheckBox x:Name="AutoAdvanceCheck" Content="Auto-advance" Focusable="False" VerticalAlignment="Center" Click="AutoAdvanceCheck_Click"
                   ToolTip="Go to the next photo after rating or flagging (A). Hold Shift while rating to do the opposite." />
 
-        <Button DockPanel.Dock="Right" Content="Shortcuts" Focusable="False" Click="HelpButton_Click" ToolTip="Keyboard shortcuts (?)" />
+        <Button DockPanel.Dock="Right" Content="?" MinWidth="34" FontWeight="SemiBold" Focusable="False" Click="HelpButton_Click" ToolTip="Keyboard shortcuts (?)" />
         <ToggleButton x:Name="HistogramButton" DockPanel.Dock="Right" Content="Histogram" Focusable="False" Margin="0,0,8,0"
                       Click="HistogramButton_Click" ToolTip="Show the histogram and clipping (H)" />
+        <ToggleButton x:Name="GridButton" DockPanel.Dock="Right" Content="Grid" Focusable="False" Margin="0,0,8,0"
+                      Click="GridButton_Click" ToolTip="All photos as thumbnails (G)" />
         <ToggleButton x:Name="CompareButton" DockPanel.Dock="Right" Content="Compare" Focusable="False" Margin="0,0,8,0"
                       Click="CompareButton_Click" ToolTip="Show two photos side by side (C)" />
       </DockPanel>
@@ -134,6 +136,11 @@
           <Button x:Name="ReopenButton" Padding="18,8" Margin="10,0,0,0" Focusable="False" Click="ReopenButton_Click" Visibility="Collapsed" />
         </StackPanel>
       </StackPanel>
+
+      <!-- Grid view: all photos as thumbnails -->
+      <local:PhotoGrid x:Name="GridPanel" Grid.ColumnSpan="2" Visibility="Collapsed"
+                       OpenRequested="GridPanel_OpenRequested" SelectionChanged="GridPanel_SelectionChanged"
+                       CellSizeChanged="GridPanel_CellSizeChanged" />
 
       <!-- All frames of a burst side by side, best first -->
       <local:BurstReview x:Name="BurstPanel" Grid.ColumnSpan="2" Visibility="Collapsed"
@@ -188,6 +195,13 @@
     <Border x:Name="StatusBar" Grid.Row="3" Background="#191919" Padding="10,4">
       <DockPanel>
         <TextBlock x:Name="CountsText" DockPanel.Dock="Right" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="16,0,0,0" VerticalAlignment="Center" />
+        <!-- Thumbnail size, only in the grid view -->
+        <StackPanel x:Name="GridSizePanel" DockPanel.Dock="Right" Orientation="Horizontal" Margin="16,0,0,0" Visibility="Collapsed"
+                    ToolTip="Thumbnail size (Ctrl + mouse wheel, or + and −)">
+          <TextBlock Text="Thumbnail size" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,8,0" />
+          <Slider x:Name="GridSizeSlider" Width="140" Minimum="100" Maximum="420" VerticalAlignment="Center" Focusable="False"
+                  ValueChanged="GridSizeSlider_ValueChanged" />
+        </StackPanel>
         <Button x:Name="StatusCancelButton" DockPanel.Dock="Right" Content="Cancel" Focusable="False" Padding="10,1" FontSize="12"
                 Margin="12,0,0,0" Visibility="Collapsed" Click="StatusCancelButton_Click" />
         <Button x:Name="StatusShowButton" DockPanel.Dock="Right" Content="Show in Explorer" Focusable="False" Padding="10,1" FontSize="12"
